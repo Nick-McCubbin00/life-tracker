@@ -17,12 +17,10 @@ const formatDate = (date) => {
 export default function App() {
     // State management
     const [currentDate, setCurrentDate] = useState(new Date());
-    const [lastUpdated, setLastUpdated] = useState(null);
     const [reminderDays, setReminderDays] = useState(30);
-    const [nextUpdate, setNextUpdate] = useState(null);
     const [inputDate, setInputDate] = useState('');
     const [category, setCategory] = useState('');
-    const [activeCategory, setActiveCategory] = useState('');
+    const [reminders, setReminders] = useState([]);
     const [error, setError] = useState('');
 
     // Memoized values for calendar generation to prevent recalculation on every render
@@ -43,7 +41,6 @@ export default function App() {
         setCurrentDate(new Date(year, month + 1, 1));
     };
 
-    // Handler to set the update dates
     const handleSetReminder = () => {
         if (!inputDate || !reminderDays || !category) {
             setError('Please fill in all fields: date, reminder days, and category.');
@@ -56,13 +53,30 @@ export default function App() {
         setError('');
 
         const lastUpdatedDate = new Date(inputDate);
-        setLastUpdated(lastUpdatedDate);
-        
+        const days = parseInt(reminderDays, 10);
         const nextUpdateDate = new Date(lastUpdatedDate);
-        nextUpdateDate.setDate(nextUpdateDate.getDate() + parseInt(reminderDays, 10));
-        setNextUpdate(nextUpdateDate);
-        
-        setActiveCategory(category);
+        nextUpdateDate.setDate(nextUpdateDate.getDate() + days);
+
+        const newReminder = {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            category: category.trim(),
+            reminderDays: days,
+            lastUpdated: lastUpdatedDate,
+            nextUpdate: nextUpdateDate,
+        };
+        setReminders((prev) => [...prev, newReminder]);
+        setCategory('');
+        setInputDate('');
+    };
+
+    const handleCompleteReminder = (reminderId, completedDate) => {
+        setReminders((prev) => prev.map((r) => {
+            if (r.id !== reminderId) return r;
+            const newLastUpdated = new Date(completedDate);
+            const newNext = new Date(newLastUpdated);
+            newNext.setDate(newNext.getDate() + r.reminderDays);
+            return { ...r, lastUpdated: newLastUpdated, nextUpdate: newNext };
+        }));
     };
 
     // Calendar rendering logic
@@ -70,8 +84,6 @@ export default function App() {
         const calendarDays = [];
         const today = new Date();
         const todayStr = formatDate(today);
-        const lastUpdatedStr = formatDate(lastUpdated);
-        const nextUpdateStr = formatDate(nextUpdate);
 
         // Add blank cells for days before the 1st of the month
         for (let i = 0; i < firstDayOfMonth; i++) {
@@ -83,40 +95,42 @@ export default function App() {
             const dayDate = new Date(year, month, day);
             const dayStr = formatDate(dayDate);
 
-            // Determine styling for each day
-            let dayClasses = "relative p-2 h-24 text-sm border-r border-b border-gray-200 flex flex-col justify-start items-end transition-colors duration-200";
-            let dayContent = <span className="font-medium text-gray-700">{day}</span>;
-            let tooltipText = '';
+            let dayClasses = "relative p-2 h-24 text-sm border-r border-b border-gray-200 flex flex-col justify-start items-start transition-colors duration-200 overflow-hidden";
+            if (dayStr === todayStr) dayClasses += " bg-blue-50";
 
-            if (dayStr === todayStr) {
-                dayClasses += " bg-blue-50";
-            }
-
-            if (dayStr === lastUpdatedStr) {
-                dayClasses += " bg-green-100 hover:bg-green-200";
-                dayContent = (
-                    <div className="w-full h-full flex flex-col justify-center items-center text-center bg-green-500 text-white rounded-lg shadow-md p-1">
-                        <span className="font-bold text-lg">{day}</span>
-                        <span className="text-xs font-semibold">Updated</span>
-                        <span className="text-xs mt-1 font-medium truncate" title={activeCategory}>{activeCategory}</span>
-                    </div>
-                );
-                tooltipText = `Category '${activeCategory}' last updated on ${lastUpdated.toLocaleDateString()}`;
-            } else if (dayStr === nextUpdateStr) {
-                dayClasses += " bg-red-100 hover:bg-red-200";
-                dayContent = (
-                    <div className="w-full h-full flex flex-col justify-center items-center text-center bg-red-500 text-white rounded-lg shadow-md p-1">
-                        <span className="font-bold text-lg">{day}</span>
-                        <span className="text-xs font-semibold">Reminder</span>
-                         <span className="text-xs mt-1 font-medium truncate" title={activeCategory}>{activeCategory}</span>
-                    </div>
-                );
-                tooltipText = `Category '${activeCategory}' update due on ${nextUpdate.toLocaleDateString()}`;
-            }
+            const updatedToday = reminders.filter(r => formatDate(r.lastUpdated) === dayStr);
+            const dueToday = reminders.filter(r => formatDate(r.nextUpdate) === dayStr);
 
             calendarDays.push(
-                <div key={dayStr} className={dayClasses} title={tooltipText}>
-                    {dayContent}
+                <div key={dayStr} className={dayClasses}>
+                    <span className="font-medium text-gray-700">{day}</span>
+                    <div className="mt-1 w-full space-y-1">
+                        {updatedToday.map((r) => (
+                            <div
+                                key={`u-${r.id}`}
+                                className="w-full text-xs text-white bg-green-500 rounded-lg shadow-md px-2 py-1 truncate"
+                                title={`'${r.category}' updated on ${new Date(r.lastUpdated).toLocaleDateString()}`}
+                            >
+                                <div className="flex justify-between items-center">
+                                    <span className="font-semibold">Updated</span>
+                                    <span className="ml-2 font-medium truncate">{r.category}</span>
+                                </div>
+                            </div>
+                        ))}
+                        {dueToday.map((r) => (
+                            <button
+                                key={`d-${r.id}`}
+                                onClick={() => handleCompleteReminder(r.id, dayDate)}
+                                className="w-full text-xs text-white bg-red-500 rounded-lg shadow-md px-2 py-1 truncate hover:bg-red-200 hover:text-red-600 transition-colors"
+                                title={`'${r.category}' due on ${new Date(r.nextUpdate).toLocaleDateString()} (click to complete)`}
+                            >
+                                <div className="flex justify-between items-center">
+                                    <span className="font-semibold">Reminder</span>
+                                    <span className="ml-2 font-medium truncate">{r.category}</span>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
                 </div>
             );
         }
