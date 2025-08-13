@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, AlertTriangle } from 'lucide-react';
 
 // Helper to format date to 'YYYY-MM-DD'
@@ -22,6 +22,39 @@ export default function App() {
     const [category, setCategory] = useState('');
     const [reminders, setReminders] = useState([]);
     const [error, setError] = useState('');
+
+    // Load persisted reminders and settings on first mount
+    useEffect(() => {
+        try {
+            const savedReminders = localStorage.getItem('reminders');
+            if (savedReminders) {
+                const parsed = JSON.parse(savedReminders);
+                if (Array.isArray(parsed)) setReminders(parsed);
+            }
+        } catch (_) {}
+
+        try {
+            const savedDays = localStorage.getItem('reminderDays');
+            if (savedDays) {
+                const n = parseInt(savedDays, 10);
+                if (!Number.isNaN(n) && n > 0) setReminderDays(n);
+            }
+        } catch (_) {}
+    }, []);
+
+    // Persist reminders whenever they change
+    useEffect(() => {
+        try {
+            localStorage.setItem('reminders', JSON.stringify(reminders));
+        } catch (_) {}
+    }, [reminders]);
+
+    // Persist reminderDays setting
+    useEffect(() => {
+        try {
+            localStorage.setItem('reminderDays', String(reminderDays));
+        } catch (_) {}
+    }, [reminderDays]);
 
     // Memoized values for calendar generation to prevent recalculation on every render
     const { month, year, daysInMonth, firstDayOfMonth } = useMemo(() => {
@@ -61,8 +94,8 @@ export default function App() {
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             category: category.trim(),
             reminderDays: days,
-            lastUpdated: lastUpdatedDate,
-            nextUpdate: nextUpdateDate,
+            lastUpdated: lastUpdatedDate.toISOString(),
+            nextUpdate: nextUpdateDate.toISOString(),
         };
         setReminders((prev) => [...prev, newReminder]);
         setCategory('');
@@ -75,7 +108,7 @@ export default function App() {
             const newLastUpdated = new Date(completedDate);
             const newNext = new Date(newLastUpdated);
             newNext.setDate(newNext.getDate() + r.reminderDays);
-            return { ...r, lastUpdated: newLastUpdated, nextUpdate: newNext };
+            return { ...r, lastUpdated: newLastUpdated.toISOString(), nextUpdate: newNext.toISOString() };
         }));
     };
 
@@ -112,8 +145,7 @@ export default function App() {
                                 title={`'${r.category}' updated on ${new Date(r.lastUpdated).toLocaleDateString()}`}
                             >
                                 <div className="flex justify-between items-center">
-                                    <span className="font-semibold">Updated</span>
-                                    <span className="ml-2 font-medium truncate">{r.category}</span>
+                                    <span className="font-medium truncate">{r.category}</span>
                                 </div>
                             </div>
                         ))}
@@ -125,8 +157,7 @@ export default function App() {
                                 title={`'${r.category}' due on ${new Date(r.nextUpdate).toLocaleDateString()} (click to complete)`}
                             >
                                 <div className="flex justify-between items-center">
-                                    <span className="font-semibold">Reminder</span>
-                                    <span className="ml-2 font-medium truncate">{r.category}</span>
+                                    <span className="font-medium truncate">{r.category}</span>
                                 </div>
                             </button>
                         ))}
