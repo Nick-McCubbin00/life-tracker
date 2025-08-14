@@ -96,6 +96,8 @@ export default function App() {
             reminderDays: days,
             lastUpdated: lastUpdatedDate.toISOString(),
             nextUpdate: nextUpdateDate.toISOString(),
+            // keep a backlog of previous update dates (rendered as blue)
+            history: [],
         };
         setReminders((prev) => [...prev, newReminder]);
         setCategory('');
@@ -105,10 +107,15 @@ export default function App() {
     const handleCompleteReminder = (reminderId, completedDate) => {
         setReminders((prev) => prev.map((r) => {
             if (r.id !== reminderId) return r;
+
+            // Preserve previous lastUpdated in backlog history
+            const backlog = Array.isArray(r.history) ? [...r.history] : [];
+            if (r.lastUpdated) backlog.push(r.lastUpdated);
+
             const newLastUpdated = new Date(completedDate);
             const newNext = new Date(newLastUpdated);
             newNext.setDate(newNext.getDate() + r.reminderDays);
-            return { ...r, lastUpdated: newLastUpdated.toISOString(), nextUpdate: newNext.toISOString() };
+            return { ...r, lastUpdated: newLastUpdated.toISOString(), nextUpdate: newNext.toISOString(), history: backlog };
         }));
     };
 
@@ -133,6 +140,15 @@ export default function App() {
 
             const updatedToday = reminders.filter(r => formatDate(r.lastUpdated) === dayStr);
             const dueToday = reminders.filter(r => formatDate(r.nextUpdate) === dayStr);
+            const historyToday = [];
+            reminders.forEach((r) => {
+                const hist = Array.isArray(r.history) ? r.history : [];
+                hist.forEach((h, idx) => {
+                    if (formatDate(h) === dayStr && formatDate(r.lastUpdated) !== dayStr) {
+                        historyToday.push({ key: `h-${r.id}-${idx}`, category: r.category, date: h });
+                    }
+                });
+            });
 
             calendarDays.push(
                 <div key={dayStr} className={dayClasses}>
@@ -146,6 +162,17 @@ export default function App() {
                             >
                                 <div className="flex justify-between items-center">
                                     <span className="font-medium truncate">{r.category}</span>
+                                </div>
+                            </div>
+                        ))}
+                        {historyToday.map((h) => (
+                            <div
+                                key={h.key}
+                                className="w-full text-xs text-white bg-blue-500 rounded-lg shadow-md px-2 py-1 truncate"
+                                title={`'${h.category}' previously updated on ${new Date(h.date).toLocaleDateString()}`}
+                            >
+                                <div className="flex justify-between items-center">
+                                    <span className="font-medium truncate">{h.category}</span>
                                 </div>
                             </div>
                         ))}
