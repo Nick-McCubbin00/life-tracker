@@ -26,6 +26,8 @@ export default function App() {
     const [error, setError] = useState('');
     const [selectedDayStr, setSelectedDayStr] = useState(null);
     const [showWeeklyUpcoming, setShowWeeklyUpcoming] = useState(false);
+    const [remoteError, setRemoteError] = useState('');
+    const [usingRemote, setUsingRemote] = useState(false);
 
     // Load reminders from Firestore if configured, else fallback to localStorage
     useEffect(() => {
@@ -39,12 +41,19 @@ export default function App() {
         } catch (_) {}
 
         if (db) {
-            const unsub = onSnapshot(collection(db, 'reminders'), (snap) => {
-                const rows = [];
-                snap.forEach((d) => rows.push(d.data()));
-                setReminders(rows);
-                try { localStorage.setItem('reminders', JSON.stringify(rows)); } catch (_) {}
-            });
+            setUsingRemote(true);
+            const unsub = onSnapshot(
+                collection(db, 'reminders'),
+                (snap) => {
+                    const rows = [];
+                    snap.forEach((d) => rows.push(d.data()));
+                    setReminders(rows);
+                    try { localStorage.setItem('reminders', JSON.stringify(rows)); } catch (_) {}
+                },
+                (err) => {
+                    setRemoteError(err?.message || 'Sync error');
+                }
+            );
             return () => unsub();
         } else {
             try {
@@ -121,7 +130,7 @@ export default function App() {
         };
         setReminders((prev) => [...prev, newReminder]);
         if (db) {
-            setDoc(doc(collection(db, 'reminders'), id), newReminder).catch(() => {});
+            setDoc(doc(collection(db, 'reminders'), id), newReminder).catch((e) => setRemoteError(e?.message || 'Failed to save to server'));
         }
         setCategory('');
         setInputDate('');
@@ -140,7 +149,7 @@ export default function App() {
             newNext.setDate(newNext.getDate() + r.reminderDays);
             const updated = { ...r, lastUpdated: newLastUpdated.toISOString(), nextUpdate: newNext.toISOString(), history: backlog };
             if (db) {
-                updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch(() => {});
+                updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
             }
             return updated;
         }));
@@ -148,7 +157,7 @@ export default function App() {
 
     const handleDeleteReminder = (reminderId) => {
         setReminders((prev) => prev.filter((r) => r.id !== reminderId));
-        if (db) deleteDoc(doc(collection(db, 'reminders'), reminderId)).catch(() => {});
+        if (db) deleteDoc(doc(collection(db, 'reminders'), reminderId)).catch((e) => setRemoteError(e?.message || 'Failed to delete on server'));
     };
 
     const handleDeleteHistoryDate = (reminderId, historyIsoString) => {
@@ -156,7 +165,7 @@ export default function App() {
             if (r.id !== reminderId) return r;
             const newHistory = (Array.isArray(r.history) ? r.history : []).filter((h) => h !== historyIsoString);
             const updated = { ...r, history: newHistory };
-            if (db) updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch(() => {});
+            if (db) updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
             return updated;
         }));
     };
@@ -298,6 +307,11 @@ export default function App() {
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
                         <div className="flex items-center gap-2">
+                            {usingRemote ? (
+                                <span className="text-xs text-green-700 bg-green-100 border border-green-200 rounded px-2 py-1">Synced</span>
+                            ) : (
+                                <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
+                            )}
                             <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
                                 <ChevronLeft className="text-gray-600" size={20} />
                             </button>
@@ -312,6 +326,12 @@ export default function App() {
                     <div className="grid grid-cols-7 grid-rows-6">
                         {renderCalendar()}
                     </div>
+                    {remoteError && (
+                        <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
+                            <AlertTriangle size={14} />
+                            <span>{remoteError}</span>
+                        </div>
+                    )}
                 </div>
             </div>
 
