@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, AlertTriangle, X, Trash2, Check } from 'lucide-react';
+import { db } from './firebase';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
 // Helper to format date to 'YYYY-MM-DD'
 const formatDate = (date) => {
@@ -25,16 +27,9 @@ export default function App() {
     const [selectedDayStr, setSelectedDayStr] = useState(null);
     const [showWeeklyUpcoming, setShowWeeklyUpcoming] = useState(false);
 
-    // Load persisted reminders and settings on first mount
+    // Load reminders from Firestore if configured, else fallback to localStorage
     useEffect(() => {
-        try {
-            const savedReminders = localStorage.getItem('reminders');
-            if (savedReminders) {
-                const parsed = JSON.parse(savedReminders);
-                if (Array.isArray(parsed)) setReminders(parsed);
-            }
-        } catch (_) {}
-
+        // settings fallback
         try {
             const savedDays = localStorage.getItem('reminderDays');
             if (savedDays) {
@@ -42,13 +37,29 @@ export default function App() {
                 if (!Number.isNaN(n) && n > 0) setReminderDays(n);
             }
         } catch (_) {}
+
+        if (db) {
+            const unsub = onSnapshot(collection(db, 'reminders'), (snap) => {
+                const rows = [];
+                snap.forEach((d) => rows.push(d.data()));
+                setReminders(rows);
+                try { localStorage.setItem('reminders', JSON.stringify(rows)); } catch (_) {}
+            });
+            return () => unsub();
+        } else {
+            try {
+                const savedReminders = localStorage.getItem('reminders');
+                if (savedReminders) {
+                    const parsed = JSON.parse(savedReminders);
+                    if (Array.isArray(parsed)) setReminders(parsed);
+                }
+            } catch (_) {}
+        }
     }, []);
 
-    // Persist reminders whenever they change
+    // Persist reminders to localStorage as cache for offline/fallback
     useEffect(() => {
-        try {
-            localStorage.setItem('reminders', JSON.stringify(reminders));
-        } catch (_) {}
+        try { localStorage.setItem('reminders', JSON.stringify(reminders)); } catch (_) {}
     }, [reminders]);
 
     // Persist reminderDays setting
@@ -97,16 +108,21 @@ export default function App() {
         const nextUpdateDate = new Date(lastUpdatedDate);
         nextUpdateDate.setDate(nextUpdateDate.getDate() + days);
 
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const newReminder = {
-            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            id,
             category: category.trim(),
             reminderDays: days,
             lastUpdated: lastUpdatedDate.toISOString(),
             nextUpdate: nextUpdateDate.toISOString(),
             // keep a backlog of previous update dates (rendered as blue)
             history: [],
+            createdAt: serverTimestamp ? serverTimestamp() : null,
         };
         setReminders((prev) => [...prev, newReminder]);
+        if (db) {
+            setDoc(doc(collection(db, 'reminders'), id), newReminder).catch(() => {});
+        }
         setCategory('');
         setInputDate('');
     };
@@ -122,19 +138,26 @@ export default function App() {
             const newLastUpdated = new Date(completedDate);
             const newNext = new Date(newLastUpdated);
             newNext.setDate(newNext.getDate() + r.reminderDays);
-            return { ...r, lastUpdated: newLastUpdated.toISOString(), nextUpdate: newNext.toISOString(), history: backlog };
+            const updated = { ...r, lastUpdated: newLastUpdated.toISOString(), nextUpdate: newNext.toISOString(), history: backlog };
+            if (db) {
+                updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch(() => {});
+            }
+            return updated;
         }));
     };
 
     const handleDeleteReminder = (reminderId) => {
         setReminders((prev) => prev.filter((r) => r.id !== reminderId));
+        if (db) deleteDoc(doc(collection(db, 'reminders'), reminderId)).catch(() => {});
     };
 
     const handleDeleteHistoryDate = (reminderId, historyIsoString) => {
         setReminders((prev) => prev.map((r) => {
             if (r.id !== reminderId) return r;
             const newHistory = (Array.isArray(r.history) ? r.history : []).filter((h) => h !== historyIsoString);
-            return { ...r, history: newHistory };
+            const updated = { ...r, history: newHistory };
+            if (db) updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch(() => {});
+            return updated;
         }));
     };
 
