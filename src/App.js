@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, AlertTriangle, X, Trash2, Check } from 'lucide-react';
 
 // Helper to format date to 'YYYY-MM-DD'
 const formatDate = (date) => {
@@ -22,6 +22,7 @@ export default function App() {
     const [category, setCategory] = useState('');
     const [reminders, setReminders] = useState([]);
     const [error, setError] = useState('');
+    const [selectedDayStr, setSelectedDayStr] = useState(null);
 
     // Load persisted reminders and settings on first mount
     useEffect(() => {
@@ -119,6 +120,18 @@ export default function App() {
         }));
     };
 
+    const handleDeleteReminder = (reminderId) => {
+        setReminders((prev) => prev.filter((r) => r.id !== reminderId));
+    };
+
+    const handleDeleteHistoryDate = (reminderId, historyIsoString) => {
+        setReminders((prev) => prev.map((r) => {
+            if (r.id !== reminderId) return r;
+            const newHistory = (Array.isArray(r.history) ? r.history : []).filter((h) => h !== historyIsoString);
+            return { ...r, history: newHistory };
+        }));
+    };
+
     // Calendar rendering logic
     const renderCalendar = () => {
         const calendarDays = [];
@@ -151,7 +164,11 @@ export default function App() {
             });
 
             calendarDays.push(
-                <div key={dayStr} className={dayClasses}>
+                <div
+                    key={dayStr}
+                    className={dayClasses + " cursor-pointer hover:bg-gray-50"}
+                    onClick={() => setSelectedDayStr(dayStr)}
+                >
                     <span className="font-medium text-gray-700">{day}</span>
                     <div className="mt-1 w-full space-y-1">
                         {updatedToday.map((r) => (
@@ -179,7 +196,7 @@ export default function App() {
                         {dueToday.map((r) => (
                             <button
                                 key={`d-${r.id}`}
-                                onClick={() => handleCompleteReminder(r.id, dayDate)}
+                                onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
                                 className="w-full text-xs text-white bg-red-500 rounded-lg shadow-md px-2 py-1 truncate hover:bg-red-200 hover:text-red-600 transition-colors"
                                 title={`'${r.category}' due on ${new Date(r.nextUpdate).toLocaleDateString()} (click to complete)`}
                             >
@@ -204,6 +221,26 @@ export default function App() {
 
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    // Weekly upcoming breakdown (current week Sun-Sat)
+    const today = new Date();
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - today.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    const weekStartMs = weekStart.getTime();
+    const weekEndMs = weekEnd.getTime();
+    const weeklyUpcoming = useMemo(() => {
+        return reminders
+            .filter((r) => {
+                const nextMs = new Date(r.nextUpdate).getTime();
+                return nextMs >= weekStartMs && nextMs <= weekEndMs;
+            })
+            .sort((a, b) => new Date(a.nextUpdate) - new Date(b.nextUpdate));
+    }, [reminders, weekStartMs, weekEndMs]);
 
     return (
         <div className="bg-gray-50 min-h-screen flex items-center justify-center p-4 font-sans">
@@ -269,8 +306,49 @@ export default function App() {
                     </button>
                 </div>
 
+                {/* --- Weekly Upcoming Sidebar --- */}
+                <div className="lg:w-1/3 bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="bg-purple-600 p-2 rounded-lg">
+                            <CalendarIcon className="text-white" size={24} />
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-800">This Week's Upcoming</h2>
+                    </div>
+                    <p className="text-gray-600 mb-4">Reminders due between {weekStart.toLocaleDateString()} and {weekEnd.toLocaleDateString()}.</p>
+                    {weeklyUpcoming.length === 0 ? (
+                        <p className="text-sm text-gray-500">No reminders due this week.</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {weeklyUpcoming.map((r) => (
+                                <div key={`wk-${r.id}`} className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                                    <div className="min-w-0">
+                                        <div className="text-sm font-semibold text-red-700 truncate">{r.category}</div>
+                                        <div className="text-xs text-red-600">Due {new Date(r.nextUpdate).toLocaleDateString()}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            className="inline-flex items-center gap-1 text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700"
+                                            title="Mark complete today"
+                                            onClick={() => handleCompleteReminder(r.id, new Date())}
+                                        >
+                                            <Check size={14} /> Done
+                                        </button>
+                                        <button
+                                            className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
+                                            title="Delete item"
+                                            onClick={() => handleDeleteReminder(r.id)}
+                                        >
+                                            <Trash2 size={14} /> Delete
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
                 {/* --- Calendar Display --- */}
-                <div className="lg:w-2/3 bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                <div className="lg:flex-1 bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
                         <div className="flex items-center gap-2">
@@ -290,6 +368,129 @@ export default function App() {
                     </div>
                 </div>
             </div>
+
+            {/* --- Day Details Modal --- */}
+            {selectedDayStr && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30 p-4" onClick={() => setSelectedDayStr(null)}>
+                    <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-200" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+                            <h4 className="text-lg font-bold text-gray-800">Details for {new Date(selectedDayStr).toLocaleDateString()}</h4>
+                            <button className="p-2 rounded hover:bg-gray-100" onClick={() => setSelectedDayStr(null)} aria-label="Close">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+                            {/* Updated Today (Green) */}
+                            <div>
+                                <div className="text-sm font-semibold text-gray-700 mb-2">Updated</div>
+                                {reminders.filter((r) => formatDate(r.lastUpdated) === selectedDayStr).length === 0 ? (
+                                    <p className="text-xs text-gray-500">No items updated this day.</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {reminders.filter((r) => formatDate(r.lastUpdated) === selectedDayStr).map((r) => (
+                                            <div key={`dlg-u-${r.id}`} className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                                                <div>
+                                                    <div className="text-sm font-semibold text-green-700">{r.category}</div>
+                                                    <div className="text-xs text-green-600">Updated on {new Date(r.lastUpdated).toLocaleDateString()}</div>
+                                                </div>
+                                                <button
+                                                    className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
+                                                    title="Delete item"
+                                                    onClick={() => handleDeleteReminder(r.id)}
+                                                >
+                                                    <Trash2 size={14} /> Delete
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Due Today (Red) */}
+                            <div>
+                                <div className="text-sm font-semibold text-gray-700 mb-2">Due</div>
+                                {reminders.filter((r) => formatDate(r.nextUpdate) === selectedDayStr).length === 0 ? (
+                                    <p className="text-xs text-gray-500">No reminders due this day.</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {reminders.filter((r) => formatDate(r.nextUpdate) === selectedDayStr).map((r) => (
+                                            <div key={`dlg-d-${r.id}`} className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                                                <div>
+                                                    <div className="text-sm font-semibold text-red-700">{r.category}</div>
+                                                    <div className="text-xs text-red-600">Due on {new Date(r.nextUpdate).toLocaleDateString()}</div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        className="inline-flex items-center gap-1 text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700"
+                                                        title="Mark complete for this day"
+                                                        onClick={() => handleCompleteReminder(r.id, new Date(selectedDayStr))}
+                                                    >
+                                                        <Check size={14} /> Complete
+                                                    </button>
+                                                    <button
+                                                        className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
+                                                        title="Delete item"
+                                                        onClick={() => handleDeleteReminder(r.id)}
+                                                    >
+                                                        <Trash2 size={14} /> Delete
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Backlog History (Blue) */}
+                            <div>
+                                <div className="text-sm font-semibold text-gray-700 mb-2">Backlog</div>
+                                {(() => {
+                                    const histRows = [];
+                                    reminders.forEach((r) => {
+                                        const hist = Array.isArray(r.history) ? r.history : [];
+                                        hist.forEach((h, idx) => {
+                                            if (formatDate(h) === selectedDayStr && formatDate(r.lastUpdated) !== selectedDayStr) {
+                                                histRows.push({ reminder: r, date: h, key: `dlg-h-${r.id}-${idx}` });
+                                            }
+                                        });
+                                    });
+                                    if (histRows.length === 0) {
+                                        return <p className="text-xs text-gray-500">No backlog entries this day.</p>;
+                                    }
+                                    return (
+                                        <div className="space-y-2">
+                                            {histRows.map(({ reminder: r, date, key }) => (
+                                                <div key={key} className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                                                    <div>
+                                                        <div className="text-sm font-semibold text-blue-700">{r.category}</div>
+                                                        <div className="text-xs text-blue-600">Previously updated on {new Date(date).toLocaleDateString()}</div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
+                                                            title="Remove this backlog date"
+                                                            onClick={() => handleDeleteHistoryDate(r.id, date)}
+                                                        >
+                                                            <Trash2 size={14} /> Delete date
+                                                        </button>
+                                                        <button
+                                                            className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
+                                                            title="Delete item"
+                                                            onClick={() => handleDeleteReminder(r.id)}
+                                                        >
+                                                            <Trash2 size={14} /> Delete item
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
