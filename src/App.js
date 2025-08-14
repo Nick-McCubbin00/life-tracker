@@ -247,7 +247,7 @@ export default function App() {
             <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-8">
                 
                 {/* --- Control Panel --- */}
-                <div className="lg:w-1/3 bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                <div className="shrink-0 lg:basis-[260px] bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
                     <div className="flex items-center gap-3 mb-6">
                          <div className="bg-blue-600 p-2 rounded-lg">
                             <CalendarIcon className="text-white" size={24} />
@@ -306,8 +306,29 @@ export default function App() {
                     </button>
                 </div>
 
+                {/* --- Calendar Display --- */}
+                <div className="flex-1 min-w-0 bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
+                        <div className="flex items-center gap-2">
+                            <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
+                                <ChevronLeft className="text-gray-600" size={20} />
+                            </button>
+                            <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
+                                <ChevronRight className="text-gray-600" size={20} />
+                            </button>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500">
+                        {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200">{day}</div>)}
+                    </div>
+                    <div className="grid grid-cols-7 grid-rows-6">
+                        {renderCalendar()}
+                    </div>
+                </div>
+
                 {/* --- Weekly Upcoming Sidebar --- */}
-                <div className="lg:w-1/3 bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                <div className="shrink-0 lg:basis-[260px] bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
                     <div className="flex items-center gap-3 mb-4">
                         <div className="bg-purple-600 p-2 rounded-lg">
                             <CalendarIcon className="text-white" size={24} />
@@ -345,27 +366,6 @@ export default function App() {
                             ))}
                         </div>
                     )}
-                </div>
-
-                {/* --- Calendar Display --- */}
-                <div className="lg:flex-1 bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
-                        <div className="flex items-center gap-2">
-                            <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
-                                <ChevronLeft className="text-gray-600" size={20} />
-                            </button>
-                            <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
-                                <ChevronRight className="text-gray-600" size={20} />
-                            </button>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500">
-                        {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200">{day}</div>)}
-                    </div>
-                    <div className="grid grid-cols-7 grid-rows-6">
-                        {renderCalendar()}
-                    </div>
                 </div>
             </div>
 
