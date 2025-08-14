@@ -23,6 +23,7 @@ export default function App() {
     const [reminders, setReminders] = useState([]);
     const [error, setError] = useState('');
     const [selectedDayStr, setSelectedDayStr] = useState(null);
+    const [showWeeklyUpcoming, setShowWeeklyUpcoming] = useState(false);
 
     // Load persisted reminders and settings on first mount
     useEffect(() => {
@@ -56,6 +57,11 @@ export default function App() {
             localStorage.setItem('reminderDays', String(reminderDays));
         } catch (_) {}
     }, [reminderDays]);
+
+    // Prefill the add-item form with the selected day when opening the day modal
+    useEffect(() => {
+        if (selectedDayStr) setInputDate(selectedDayStr);
+    }, [selectedDayStr]);
 
     // Memoized values for calendar generation to prevent recalculation on every render
     const { month, year, daysInMonth, firstDayOfMonth } = useMemo(() => {
@@ -244,70 +250,28 @@ export default function App() {
 
     return (
         <div className="bg-gray-50 min-h-screen flex items-center justify-center p-4 font-sans">
-            <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-8">
-                
-                {/* --- Control Panel --- */}
-                <div className="shrink-0 lg:basis-[260px] bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
-                    <div className="flex items-center gap-3 mb-6">
-                         <div className="bg-blue-600 p-2 rounded-lg">
-                            <CalendarIcon className="text-white" size={24} />
-                        </div>
-                        <h2 className="text-2xl font-bold text-gray-800">Update Reminder</h2>
+            <div className="w-full max-w-6xl mx-auto space-y-4">
+                {/* Top Toolbar */}
+                <div className="flex items-center justify-between bg-white p-3 rounded-xl shadow border border-gray-200">
+                    <div className="flex items-center gap-2 text-gray-700">
+                        <CalendarIcon size={18} />
+                        <span className="font-semibold">Calendar</span>
                     </div>
-                    <p className="text-gray-600 mb-6">Set a date when an item category was last updated and get a reminder for the next update.</p>
-
-                    <div className="space-y-4">
-                        <div>
-                            <label htmlFor="item-category" className="block text-sm font-semibold text-gray-700 mb-1">Item Category</label>
-                            <input
-                                type="text"
-                                id="item-category"
-                                value={category}
-                                onChange={(e) => setCategory(e.target.value)}
-                                placeholder="e.g., Marketing Assets"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="last-updated-date" className="block text-sm font-semibold text-gray-700 mb-1">Last Updated Date</label>
-                            <input
-                                type="date"
-                                id="last-updated-date"
-                                value={inputDate}
-                                onChange={(e) => setInputDate(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                            />
-                        </div>
-                        <div>
-                            <label htmlFor="reminder-days" className="block text-sm font-semibold text-gray-700 mb-1">Remind Me After (Days)</label>
-                            <input
-                                type="number"
-                                id="reminder-days"
-                                value={reminderDays}
-                                onChange={(e) => setReminderDays(e.target.value)}
-                                min="1"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-                            />
-                        </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setShowWeeklyUpcoming((v) => !v)}
+                            className="inline-flex items-center gap-2 bg-purple-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-purple-700"
+                        >
+                            This Week's Upcoming
+                            <span className="inline-flex items-center justify-center text-xs bg-white/20 rounded px-2 py-0.5">
+                                {weeklyUpcoming.length}
+                            </span>
+                        </button>
                     </div>
-                    
-                    {error && (
-                        <div className="mt-4 flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg">
-                            <AlertTriangle size={20} />
-                            <p className="text-sm font-medium">{error}</p>
-                        </div>
-                    )}
-
-                    <button
-                        onClick={handleSetReminder}
-                        className="w-full mt-6 bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition-all duration-300 transform hover:scale-105"
-                    >
-                        Set Reminder
-                    </button>
                 </div>
 
                 {/* --- Calendar Display --- */}
-                <div className="flex-1 min-w-0 bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
                         <div className="flex items-center gap-2">
@@ -326,20 +290,22 @@ export default function App() {
                         {renderCalendar()}
                     </div>
                 </div>
+            </div>
 
-                {/* --- Weekly Upcoming Sidebar --- */}
-                <div className="shrink-0 lg:basis-[260px] bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="bg-purple-600 p-2 rounded-lg">
-                            <CalendarIcon className="text-white" size={24} />
-                        </div>
-                        <h2 className="text-2xl font-bold text-gray-800">This Week's Upcoming</h2>
+            {/* Floating Weekly Upcoming Panel */}
+            {showWeeklyUpcoming && (
+                <div className="fixed right-4 top-20 z-40 w-80 max-w-[90vw] bg-white p-4 rounded-2xl shadow-2xl border border-gray-200">
+                    <div className="flex items-center justify-between mb-2">
+                        <h2 className="text-lg font-bold text-gray-800">This Week's Upcoming</h2>
+                        <button className="p-2 rounded hover:bg-gray-100" onClick={() => setShowWeeklyUpcoming(false)} aria-label="Close upcoming">
+                            <X size={18} />
+                        </button>
                     </div>
-                    <p className="text-gray-600 mb-4">Reminders due between {weekStart.toLocaleDateString()} and {weekEnd.toLocaleDateString()}.</p>
+                    <p className="text-gray-600 mb-3 text-sm">Due between {weekStart.toLocaleDateString()} and {weekEnd.toLocaleDateString()}.</p>
                     {weeklyUpcoming.length === 0 ? (
                         <p className="text-sm text-gray-500">No reminders due this week.</p>
                     ) : (
-                        <div className="space-y-2">
+                        <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
                             {weeklyUpcoming.map((r) => (
                                 <div key={`wk-${r.id}`} className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                                     <div className="min-w-0">
@@ -352,14 +318,14 @@ export default function App() {
                                             title="Mark complete today"
                                             onClick={() => handleCompleteReminder(r.id, new Date())}
                                         >
-                                            <Check size={14} /> Done
+                                            <Check size={14} />
                                         </button>
                                         <button
                                             className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
                                             title="Delete item"
                                             onClick={() => handleDeleteReminder(r.id)}
                                         >
-                                            <Trash2 size={14} /> Delete
+                                            <Trash2 size={14} />
                                         </button>
                                     </div>
                                 </div>
@@ -367,7 +333,7 @@ export default function App() {
                         </div>
                     )}
                 </div>
-            </div>
+            )}
 
             {/* --- Day Details Modal --- */}
             {selectedDayStr && (
@@ -380,6 +346,47 @@ export default function App() {
                             </button>
                         </div>
                         <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+                            {/* Add Item Category */}
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                <div className="text-sm font-semibold text-gray-700 mb-2">Add Item Category</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Category"
+                                        value={category}
+                                        onChange={(e) => setCategory(e.target.value)}
+                                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                                    />
+                                    <input
+                                        type="date"
+                                        value={inputDate}
+                                        onChange={(e) => setInputDate(e.target.value)}
+                                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                                    />
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={reminderDays}
+                                        onChange={(e) => setReminderDays(e.target.value)}
+                                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
+                                        placeholder="Days"
+                                    />
+                                </div>
+                                {error && (
+                                    <div className="mt-2 flex items-center gap-2 text-red-600 bg-red-50 p-2 rounded">
+                                        <AlertTriangle size={16} />
+                                        <p className="text-xs font-medium">{error}</p>
+                                    </div>
+                                )}
+                                <div className="mt-2 flex justify-end">
+                                    <button
+                                        onClick={handleSetReminder}
+                                        className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700"
+                                    >
+                                        Add
+                                    </button>
+                                </div>
+                            </div>
                             {/* Updated Today (Green) */}
                             <div>
                                 <div className="text-sm font-semibold text-gray-700 mb-2">Updated</div>
