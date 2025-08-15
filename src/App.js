@@ -59,6 +59,20 @@ export default function App() {
     const [editEventTitle, setEditEventTitle] = useState('');
     const [editEventNotes, setEditEventNotes] = useState('');
 
+    // Meals / Meal Planner
+    const [meals, setMeals] = useState([]); // {id,title,recipe,link,ingredients:[{id,name,quantity}]}
+    const [groceriesSubtab, setGroceriesSubtab] = useState('list'); // list | planner
+    // New meal form
+    const [mealTitle, setMealTitle] = useState('');
+    const [mealRecipe, setMealRecipe] = useState('');
+    const [mealLink, setMealLink] = useState('');
+    const [mealIngredients, setMealIngredients] = useState([]);
+    const [ingName, setIngName] = useState('');
+    const [ingQty, setIngQty] = useState('');
+    // Planner week and selections
+    const [plannerWeekStart, setPlannerWeekStart] = useState(formatDate(new Date()));
+    const [plannerSelection, setPlannerSelection] = useState({}); // {0..6: mealId}
+
     // Backup/Restore in-progress state
     const [isBackingUp, setIsBackingUp] = useState(false);
     const [isRestoring, setIsRestoring] = useState(false);
@@ -95,8 +109,8 @@ export default function App() {
                 if (savedGroceries) {
                     const parsed = JSON.parse(savedGroceries);
                     if (Array.isArray(parsed)) setGroceries(parsed);
-            }
-        } catch (_) {}
+                }
+            } catch (_) {}
             try {
                 const savedRequests = localStorage.getItem('requests');
                 if (savedRequests) {
@@ -109,6 +123,13 @@ export default function App() {
                 if (savedEvents) {
                     const parsed = JSON.parse(savedEvents);
                     if (Array.isArray(parsed)) setEvents(parsed);
+                }
+            } catch (_) {}
+            try {
+                const savedMeals = localStorage.getItem('meals');
+                if (savedMeals) {
+                    const parsed = JSON.parse(savedMeals);
+                    if (Array.isArray(parsed)) setMeals(parsed);
                 }
             } catch (_) {}
         }
@@ -140,6 +161,7 @@ export default function App() {
     useEffect(() => { try { localStorage.setItem('tasks', JSON.stringify(tasks)); } catch (_) {} }, [tasks]);
     useEffect(() => { try { localStorage.setItem('groceries', JSON.stringify(groceries)); } catch (_) {} }, [groceries]);
     useEffect(() => { try { localStorage.setItem('requests', JSON.stringify(requests)); } catch (_) {} }, [requests]);
+    useEffect(() => { try { localStorage.setItem('meals', JSON.stringify(meals)); } catch (_) {} }, [meals]);
 
     // Memoized values for calendar generation to prevent recalculation on every render
     const { month, year, daysInMonth, firstDayOfMonth } = useMemo(() => {
@@ -420,27 +442,28 @@ export default function App() {
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
                             <div className="flex items-center gap-2">
-                            <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
-                                <ChevronLeft className="text-gray-600" size={20} />
-                            </button>
-                            <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
-                                <ChevronRight className="text-gray-600" size={20} />
-                            </button>
+                                <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
+                                    <ChevronLeft className="text-gray-600" size={20} />
+                                </button>
+                                <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
+                                    <ChevronRight className="text-gray-600" size={20} />
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500">
-                        {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200">{day}</div>)}
-                    </div>
-                    <div className="grid grid-cols-7 grid-rows-6">
-                        {renderCalendar()}
-                    </div>
-                    {remoteError && (
-                        <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
-                            <AlertTriangle size={14} />
-                            <span>{remoteError}</span>
+                        <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500">
+                            {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200">{day}</div>)}
                         </div>
-                    )}
-                </div>
+                        <div className="grid grid-cols-7 grid-rows-6">
+                            {renderCalendar()}
+                        </div>
+                        {remoteError && (
+                            <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
+                                <AlertTriangle size={14} />
+                                <span>{remoteError}</span>
+                            </div>
+                        )}
+                    </div>
+                    {/* Daily Tasks Sidebar */}
                     <div className="bg-white p-4 rounded-2xl shadow-lg border border-gray-200 h-fit lg:sticky lg:top-4">
                         <div className="flex items-center justify-between mb-2">
                             <h4 className="text-sm font-bold text-gray-800">Tasks</h4>
@@ -477,32 +500,125 @@ export default function App() {
                 {/* Groceries Tab */}
                 {activeTab === 'groceries' && (
                 <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-6">
-                    <div className="text-xl font-bold text-gray-800">Groceries</div>
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-                            <input value={groceryName} onChange={(e)=>setGroceryName(e.target.value)} placeholder="Item" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                            <input value={groceryQty} onChange={(e)=>setGroceryQty(e.target.value)} placeholder="Qty" className="px-3 py-2 border border-gray-300 rounded-lg" />
-                            <div className="md:col-span-2" />
-                            <button onClick={handleAddGrocery} className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700">Add Item</button>
-                        </div>
+                    <div className="flex items-center gap-3">
+                        <div className={`text-sm font-semibold px-3 py-1 rounded cursor-pointer ${groceriesSubtab==='list' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`} onClick={()=>setGroceriesSubtab('list')}>List</div>
+                        <div className={`text-sm font-semibold px-3 py-1 rounded cursor-pointer ${groceriesSubtab==='planner' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`} onClick={()=>setGroceriesSubtab('planner')}>Meal Planner</div>
                     </div>
-                    <div className="space-y-2">
-                        {groceries.map((g)=> (
-                            <label key={g.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                                <input type="checkbox" checked={!!g.checked} onChange={()=>toggleGrocery(g.id)} />
-                                <div>
-                                    <div className={`text-sm font-semibold ${g.checked ? 'line-through text-gray-500' : 'text-gray-800'}`}>{g.name} {g.quantity ? `· ${g.quantity}` : ''}</div>
+
+                    {groceriesSubtab==='list' && (
+                        <>
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                                    <input value={groceryName} onChange={(e)=>setGroceryName(e.target.value)} placeholder="Item" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                                    <input value={groceryQty} onChange={(e)=>setGroceryQty(e.target.value)} placeholder="Qty" className="px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <div className="md:col-span-2" />
+                                    <button onClick={handleAddGrocery} className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700">Add Item</button>
                                 </div>
-                                <button className="ml-auto text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={()=>deleteGrocery(g.id)}><Trash2 size={14}/></button>
-                            </label>
-                        ))}
-                        {groceries.length===0 && <div className="text-xs text-gray-500">No items yet.</div>}
-                        {groceries.some((g)=>g.checked) && (
-                            <div className="pt-2">
-                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={clearCheckedGroceries}>Clear checked</button>
                             </div>
-                        )}
-                    </div>
+                            <div className="space-y-2">
+                                {groceries.map((g)=> (
+                                    <label key={g.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                        <input type="checkbox" checked={!!g.checked} onChange={()=>toggleGrocery(g.id)} />
+                                        <div>
+                                            <div className={`text-sm font-semibold ${g.checked ? 'line-through text-gray-500' : 'text-gray-800'}`}>{g.name} {g.quantity ? `· ${g.quantity}` : ''}</div>
+                                        </div>
+                                        <button className="ml-auto text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={()=>deleteGrocery(g.id)}><Trash2 size={14}/></button>
+                                    </label>
+                                ))}
+                                {groceries.length===0 && <div className="text-xs text-gray-500">No items yet.</div>}
+                                {groceries.some((g)=>g.checked) && (
+                                    <div className="pt-2">
+                                        <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={clearCheckedGroceries}>Clear checked</button>
+                                    </div>
+                                )}
+                            </div>
+                        </>
+                    )}
+
+                    {groceriesSubtab==='planner' && (
+                        <div className="space-y-4">
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+                                <div className="text-sm font-semibold text-gray-700">Create Meal</div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                    <input value={mealTitle} onChange={(e)=>setMealTitle(e.target.value)} placeholder="Meal title" className="px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <input value={mealLink} onChange={(e)=>setMealLink(e.target.value)} placeholder="Recipe link (optional)" className="px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <div className="md:col-span-1" />
+                                </div>
+                                <textarea value={mealRecipe} onChange={(e)=>setMealRecipe(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Recipe notes (optional)" />
+                                <div className="space-y-2">
+                                    <div className="text-xs font-semibold text-gray-600">Ingredients</div>
+                                    {(mealIngredients||[]).map((ing)=> (
+                                        <div key={ing.id} className="flex items-center gap-2 text-xs">
+                                            <span>{ing.name} {ing.quantity ? `· ${ing.quantity}` : ''}</span>
+                                            <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=> setMealIngredients((prev)=> prev.filter(i=>i.id!==ing.id))}><Trash2 size={12}/></button>
+                                        </div>
+                                    ))}
+                                    <div className="flex items-center gap-2">
+                                        <input value={ingName} onChange={(e)=>setIngName(e.target.value)} placeholder="Ingredient" className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs" />
+                                        <input value={ingQty} onChange={(e)=>setIngQty(e.target.value)} placeholder="Qty" className="w-28 px-2 py-1 border border-gray-300 rounded text-xs" />
+                                        <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{
+                                            const n = ingName.trim();
+                                            if (!n) return; setMealIngredients((prev)=> [...prev, { id: generateId(), name: n, quantity: ingQty.trim() }]); setIngName(''); setIngQty('');
+                                        }}>Add</button>
+                                    </div>
+                                </div>
+                                <div className="flex justify-end">
+                                    <button className="text-xs bg-blue-600 text-white rounded px-3 py-1" onClick={()=>{
+                                        const t = mealTitle.trim(); if (!t) return;
+                                        const id = generateId();
+                                        setMeals((prev)=> [...prev, { id, title: t, recipe: mealRecipe.trim(), link: mealLink.trim(), ingredients: mealIngredients }]);
+                                        setMealTitle(''); setMealRecipe(''); setMealLink(''); setMealIngredients([]);
+                                    }}>Save Meal</button>
+                                </div>
+                            </div>
+
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-sm font-semibold text-gray-700">Plan Week</div>
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-xs text-gray-600">Week starting</label>
+                                        <input type="date" value={plannerWeekStart} onChange={(e)=>setPlannerWeekStart(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs" />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
+                                    {[0,1,2,3,4,5,6].map((offset)=>{
+                                        const start = parseYmd(plannerWeekStart);
+                                        const d = new Date(start.getFullYear(), start.getMonth(), start.getDate()+offset);
+                                        const ymd = formatDate(d);
+                                        const label = d.toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric'});
+                                        return (
+                                            <div key={offset} className="border border-gray-200 rounded p-2 space-y-2">
+                                                <div className="text-xs font-semibold text-gray-700">{label}</div>
+                                                <select className="w-full px-2 py-1 border border-gray-300 rounded text-xs" value={plannerSelection[ymd]||''} onChange={(e)=> setPlannerSelection((prev)=> ({...prev, [ymd]: e.target.value}))}>
+                                                    <option value="">Select meal…</option>
+                                                    {meals.map((m)=> <option key={m.id} value={m.id}>{m.title}</option>)}
+                                                </select>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <div className="flex justify-end">
+                                    <button className="text-sm bg-green-600 text-white rounded px-3 py-2 hover:bg-green-700" onClick={()=>{
+                                        // Add selected meals to calendar as events and push ingredients to groceries
+                                        const addedGroceries = [];
+                                        Object.entries(plannerSelection).forEach(([ymd, mealId])=>{
+                                            if (!mealId) return;
+                                            const meal = meals.find(m=>m.id===mealId); if (!meal) return;
+                                            // create event
+                                            setEvents((prev)=> [...prev, { id: generateId(), title: meal.title, date: ymd, notes: meal.link ? `Recipe: ${meal.link}\n` + (meal.recipe||'') : (meal.recipe||'') }]);
+                                            // add ingredients
+                                            (meal.ingredients||[]).forEach((ing)=>{
+                                                addedGroceries.push({ id: generateId(), name: ing.name, quantity: ing.quantity||'', checked: false });
+                                            });
+                                        });
+                                        if (addedGroceries.length>0) setGroceries((prev)=> [...prev, ...addedGroceries]);
+                                        // Clear selection
+                                        setPlannerSelection({});
+                                    }}>Make Plan</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
                 )}
 
@@ -565,155 +681,8 @@ export default function App() {
                     </div>
                 </div>
                 )}
+
             </div>
-
-            {/* Floating info toast */}
-            {infoMessage && (
-                <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm px-3 py-2 rounded-lg shadow-lg">
-                    {infoMessage}
-                </div>
-            )}
-
-            {/* --- Day Details Modal --- */}
-            {selectedDayStr && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30 p-4" onClick={() => setSelectedDayStr(null)}>
-                    <div className="w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-gray-200" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                            <h4 className="text-lg font-bold text-gray-800">Details for {new Date(selectedDayStr).toLocaleDateString()}</h4>
-                            <button className="p-2 rounded hover:bg-gray-100" onClick={() => setSelectedDayStr(null)} aria-label="Close">
-                                <X size={18} />
-                            </button>
-                        </div>
-                        <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
-                            {/* Quick add for this day */}
-                            <div className="grid grid-cols-1 gap-3">
-                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                                    <div className="text-xs font-semibold text-gray-700 mb-2">Add to this day</div>
-                                    <div className="flex gap-2 items-center flex-wrap">
-                                        <select value={newItemType} onChange={(e)=>setNewItemType(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs w-28">
-                                            <option value="task">Task</option>
-                                            <option value="event">Event</option>
-                                        </select>
-                                        {newItemType==='task' && (
-                                            <select value={newTaskRecurrence} onChange={(e)=>setNewTaskRecurrence(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs w-28">
-                                                <option value="none">One-time</option>
-                                                <option value="daily">Daily</option>
-                                                <option value="weekly">Weekly</option>
-                                                <option value="biweekly">Biweekly</option>
-                                                <option value="monthly">Monthly</option>
-                                            </select>
-                                        )}
-                                        <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder={newItemType==='task' ? 'Task title' : 'Event title'} className="flex-1 min-w-[160px] px-2 py-1 border border-gray-300 rounded text-sm" />
-                                        <button className="text-xs bg-blue-600 text-white rounded px-3 py-1 hover:bg-blue-700" onClick={()=>{
-                                            if (newItemType==='task') { addTaskForDay(selectedDayStr, newItemTitle, newTaskRecurrence); }
-                                            else { addEventForDay(selectedDayStr, newItemTitle); }
-                                            setNewItemTitle('');
-                                        }}>Add</button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Lists for this day */}
-                            <div className="grid grid-cols-1 gap-4">
-                            <div>
-                                    <div className="text-sm font-semibold text-gray-700 mb-2">Events</div>
-                                    {events.filter(e=>e.date===selectedDayStr).length===0 ? <p className="text-xs text-gray-500">No events.</p> : (
-                                        <div className="space-y-2">
-                                            {events.filter(e=>e.date===selectedDayStr).map((ev)=>(
-                                                <div key={`dlg-ev-${ev.id}`} className="rounded bg-purple-100 border border-purple-200 px-3 py-2 text-sm">
-                                                    {editingEventId===ev.id ? (
-                                    <div className="space-y-2">
-                                                            <input value={editEventTitle} onChange={(e)=>setEditEventTitle(e.target.value)} className="w-full px-2 py-1 border border-purple-300 rounded text-sm" />
-                                                            <textarea value={editEventNotes} onChange={(e)=>setEditEventNotes(e.target.value)} rows={2} className="w-full px-2 py-1 border border-purple-300 rounded text-xs" placeholder="Notes" />
-                                                            <div className="flex justify-end gap-2">
-                                                                <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>{
-                                                                    setEvents(prev=>prev.map(x=> x.id===ev.id ? { ...x, title: editEventTitle.trim()||x.title, notes: editEventNotes } : x));
-                                                                    setEditingEventId(null); setEditEventTitle(''); setEditEventNotes('');
-                                                                }}>Save</button>
-                                                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingEventId(null); setEditEventTitle(''); setEditEventNotes(''); }}>Cancel</button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-start gap-2">
-                                                            <div className="flex-1">
-                                                                <div className="font-semibold text-gray-800">{ev.title}</div>
-                                                                {ev.notes && <div className="text-xs text-gray-600 whitespace-pre-wrap">{ev.notes}</div>}
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                                <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingEventId(ev.id); setEditEventTitle(ev.title); setEditEventNotes(ev.notes||''); }}>Edit</button>
-                                                                <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteEvent(ev.id)}><Trash2 size={14}/></button>
-                                                </div>
-                                                        </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                            <div>
-                                    <div className="text-sm font-semibold text-gray-700 mb-2">Tasks</div>
-                                    {tasks.filter(t=>occursOnDay(t, parseYmd(selectedDayStr))).length===0 ? <p className="text-xs text-gray-500">No tasks.</p> : (
-                                        <div className="space-y-2">
-                                            {tasks.filter(t=>occursOnDay(t, parseYmd(selectedDayStr))).map((t)=>(
-                                                <div key={`dlg-t-${t.id}`} className="rounded bg-blue-50 border border-blue-200 px-3 py-2 text-sm">
-                                                    {editingTaskId===t.id ? (
-                                    <div className="space-y-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <input type="checkbox" checked={isTaskDoneOnDate(t, selectedDayStr)} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
-                                                                <input value={editTaskTitle} onChange={(e)=>setEditTaskTitle(e.target.value)} className="flex-1 px-2 py-1 border border-blue-300 rounded text-sm" />
-                                                                <select value={t.recurrence} onChange={(e)=> setTasks(prev=>prev.map(x=> x.id===t.id ? { ...x, recurrence: e.target.value } : x))} className="px-2 py-1 border border-blue-300 rounded text-xs">
-                                                                    <option value="none">One-time</option>
-                                                                    <option value="daily">Daily</option>
-                                                                    <option value="weekly">Weekly</option>
-                                                                    <option value="biweekly">Biweekly</option>
-                                                                    <option value="monthly">Monthly</option>
-                                                                </select>
-                                                            </div>
-                                                            <textarea value={editTaskNotes} onChange={(e)=>setEditTaskNotes(e.target.value)} rows={2} className="w-full px-2 py-1 border border-blue-300 rounded text-xs" placeholder="Notes" />
-                                                            <div className="flex justify-end gap-2">
-                                                                <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>{ setTasks(prev=>prev.map(x=> x.id===t.id ? { ...x, title: (editTaskTitle.trim()||x.title), notes: editTaskNotes } : x)); setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes(''); }}>Save</button>
-                                                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes(''); }}>Cancel</button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-start gap-2">
-                                                            <input type="checkbox" checked={isTaskDoneOnDate(t, selectedDayStr)} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
-                                                            <div className="flex-1">
-                                                                <div className={isTaskDoneOnDate(t, selectedDayStr) ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title} {t.recurrence && t.recurrence!=='none' && <span className="text-xs text-gray-500">({t.recurrence})</span>}</div>
-                                                                {t.notes && <div className="text-xs text-gray-600 whitespace-pre-wrap">{t.notes}</div>}
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                                <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingTaskId(t.id); setEditTaskTitle(t.title); setEditTaskNotes(t.notes||''); }}>Edit</button>
-                                                                <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
-                                                </div>
-                                                        </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                            <div>
-                                    <div className="text-sm font-semibold text-gray-700 mb-2">Requests</div>
-                                    {requests.filter(r=>r.status==='approved' && r.approvedDueDate && formatDate(r.approvedDueDate)===selectedDayStr).length===0 ? <p className="text-xs text-gray-500">No requests.</p> : (
-                                        <div className="space-y-1">
-                                            {requests.filter(r=>r.status==='approved' && r.approvedDueDate && formatDate(r.approvedDueDate)===selectedDayStr).map((r)=>(
-                                                <div key={`dlg-rq-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-sm" style={{ backgroundColor: '#ffd6e7', border: '1px solid #f5a6bd' }}>
-                                                    <span className="text-[#7a2946]">{r.title} <span className="capitalize text-xs">({r.priority})</span></span>
-                                                    <div className="flex items-center gap-2">
-                                                        {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
-                                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }
