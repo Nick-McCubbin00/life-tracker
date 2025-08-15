@@ -272,7 +272,7 @@ export default function App() {
             let dayClasses = "relative p-2 h-36 text-xs border-r border-b border-gray-200 flex flex-col justify-start items-start transition-colors duration-200 overflow-hidden";
             if (dayStr === todayStr) dayClasses += " bg-blue-50";
 
-            const tasksToday = tasks.filter(t => occursOnDay(t, dayDate));
+            const tasksToday = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate));
             const eventsToday = events.filter(e => e.date === dayStr);
             const requestsToday = requests.filter(r => r.status === 'approved' && r.approvedDueDate && formatDate(r.approvedDueDate) === dayStr);
 
@@ -395,30 +395,54 @@ export default function App() {
 
                 {/* --- Calendar Display --- */}
                 {activeTab === 'calendar' && (
-                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
-                        <div className="flex items-center gap-2">
-                            <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
-                                <ChevronLeft className="text-gray-600" size={20} />
-                            </button>
-                            <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
-                                <ChevronRight className="text-gray-600" size={20} />
-                            </button>
+                <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
+                    <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
+                            <div className="flex items-center gap-2">
+                                <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
+                                    <ChevronLeft className="text-gray-600" size={20} />
+                                </button>
+                                <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
+                                    <ChevronRight className="text-gray-600" size={20} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500">
+                            {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200">{day}</div>)}
+                        </div>
+                        <div className="grid grid-cols-7 grid-rows-6">
+                            {renderCalendar()}
+                        </div>
+                        {remoteError && (
+                            <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
+                                <AlertTriangle size={14} />
+                                <span>{remoteError}</span>
+                            </div>
+                        )}
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl shadow-lg border border-gray-200 h-fit lg:sticky lg:top-4">
+                        <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-sm font-bold text-gray-800">Daily Tasks</h4>
+                            <span className="text-[10px] text-gray-500">{formatDate(new Date())}</span>
+                        </div>
+                        <div className="space-y-2">
+                            {tasks.filter(t=>t.recurrence==='daily').length===0 && (
+                                <div className="text-xs text-gray-500">No daily tasks yet.</div>
+                            )}
+                            {tasks.filter(t=>t.recurrence==='daily').map((t)=>{
+                                const todayStr = formatDate(new Date());
+                                const checked = isTaskDoneOnDate(t, todayStr);
+                                return (
+                                    <label key={`side-t-${t.id}`} className="flex items-center gap-2 rounded bg-blue-50 border border-blue-200 px-2 py-2 text-xs">
+                                        <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, todayStr)} />
+                                        <span className={checked ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
+                                        <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={12}/></button>
+                                    </label>
+                                );
+                            })}
                         </div>
                     </div>
-                    <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500">
-                        {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200">{day}</div>)}
-                    </div>
-                    <div className="grid grid-cols-7 grid-rows-6">
-                        {renderCalendar()}
-                    </div>
-                    {remoteError && (
-                        <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
-                            <AlertTriangle size={14} />
-                            <span>{remoteError}</span>
-                        </div>
-                    )}
                 </div>
                 )}
 
