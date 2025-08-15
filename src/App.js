@@ -31,8 +31,8 @@ export default function App() {
     const [requests, setRequests] = useState([]);   // {id, title, details, priority, requestedDueDate, approved, approvedDueDate, status}
 
     // Inputs (day modal)
-    const [newTaskTitle, setNewTaskTitle] = useState('');
-    const [newEventTitle, setNewEventTitle] = useState('');
+    const [newItemType, setNewItemType] = useState('task'); // 'task' | 'event'
+    const [newItemTitle, setNewItemTitle] = useState('');
     const [newRequestTitle, setNewRequestTitle] = useState('');
     const [newRequestPriority, setNewRequestPriority] = useState('medium');
     const [requestDetails, setRequestDetails] = useState('');
@@ -40,6 +40,12 @@ export default function App() {
     // Groceries inputs
     const [groceryName, setGroceryName] = useState('');
     const [groceryQty, setGroceryQty] = useState('');
+
+    // Requests tab inputs
+    const [reqFormTitle, setReqFormTitle] = useState('');
+    const [reqFormPriority, setReqFormPriority] = useState('medium');
+    const [reqFormDueDate, setReqFormDueDate] = useState('');
+    const [reqFormDetails, setReqFormDetails] = useState('');
 
     // Backup/Restore in-progress state
     const [isBackingUp, setIsBackingUp] = useState(false);
@@ -424,7 +430,35 @@ export default function App() {
                 {activeTab === 'requests' && (
                 <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-6">
                     <div className="text-xl font-bold text-gray-800">Fiancé Requests</div>
-                    <div className="text-xs text-gray-500">Requests also appear on the calendar on their requested due date.</div>
+                    <div className="text-xs text-gray-500">Add, approve, or complete requests. Approved requests appear on the calendar (light pink) on their approved date.</div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                            <input value={reqFormTitle} onChange={(e)=>setReqFormTitle(e.target.value)} placeholder="Title" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                            <select value={reqFormPriority} onChange={(e)=>setReqFormPriority(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                            </select>
+                            <input type="date" value={reqFormDueDate} onChange={(e)=>setReqFormDueDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                            <input value={reqFormDetails} onChange={(e)=>setReqFormDetails(e.target.value)} placeholder="Details (optional)" className="px-3 py-2 border border-gray-300 rounded-lg md:col-span-2" />
+                            <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                                if (!reqFormTitle.trim()) return;
+                                const id = generateId();
+                                const payload = {
+                                    id,
+                                    title: reqFormTitle.trim(),
+                                    details: reqFormDetails.trim(),
+                                    priority: reqFormPriority,
+                                    requestedDueDate: reqFormDueDate ? new Date(reqFormDueDate).toISOString() : null,
+                                    approved: false,
+                                    approvedDueDate: null,
+                                    status: 'pending',
+                                };
+                                setRequests((prev)=>[...prev, payload]);
+                                setReqFormTitle(''); setReqFormDetails(''); setReqFormDueDate(''); setReqFormPriority('medium');
+                            }}>Add</button>
+                        </div>
+                    </div>
                     <div className="grid grid-cols-1 gap-2">
                         {requests.length === 0 && <div className="text-xs text-gray-500">No requests.</div>}
                         {requests.sort((a,b)=>{
@@ -434,10 +468,15 @@ export default function App() {
                             <div key={r.id} className="flex items-center justify-between rounded px-3 py-2 text-sm" style={{ backgroundColor: '#ffd6e7', border: '1px solid #f5a6bd' }}>
                                 <div>
                                     <div className="font-semibold text-[#7a2946]">{r.title}</div>
-                                    <div className="text-xs text-[#7a2946]">Priority: <span className="capitalize">{r.priority}</span>{r.requestedDueDate ? ` · due ${new Date(r.requestedDueDate).toLocaleDateString()}` : ''}</div>
+                                    <div className="text-xs text-[#7a2946]">Priority: <span className="capitalize">{r.priority}</span>{r.requestedDueDate ? ` · requested ${new Date(r.requestedDueDate).toLocaleDateString()}` : ''}{r.approvedDueDate ? ` · approved ${new Date(r.approvedDueDate).toLocaleDateString()}` : ''}</div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    {r.status==='pending' && <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={()=>approveRequest(r.id, formatDate(r.requestedDueDate || new Date()))}>Approve</button>}
+                                    {r.status==='pending' && (
+                                        <>
+                                            <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>approveRequest(r.id, e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs" />
+                                            <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>
+                                        </>
+                                    )}
                                     {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
                                     <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>
                                 </div>
@@ -467,31 +506,20 @@ export default function App() {
                         </div>
                         <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
                             {/* Quick add for this day */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                    <div className="text-xs font-semibold text-blue-700 mb-2">Add Task (blue)</div>
-                                    <div className="flex gap-2">
-                                        <select value={newTaskTitle} onChange={(e)=>setNewTaskTitle(e.target.value)} className="flex-1 px-2 py-1 border border-blue-200 rounded text-xs">
-                                            <option value="">Select a task…</option>
-                                            <option value="Workout">Workout</option>
-                                            <option value="Laundry">Laundry</option>
-                                            <option value="Dishes">Dishes</option>
-                                            <option value="Clean kitchen">Clean kitchen</option>
+                            <div className="grid grid-cols-1 gap-3">
+                                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                    <div className="text-xs font-semibold text-gray-700 mb-2">Add to this day</div>
+                                    <div className="flex gap-2 items-center">
+                                        <select value={newItemType} onChange={(e)=>setNewItemType(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs w-28">
+                                            <option value="task">Task</option>
+                                            <option value="event">Event</option>
                                         </select>
-                                        <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>{ addTaskForDay(selectedDayStr, newTaskTitle); setNewTaskTitle(''); }}>Add</button>
-                                    </div>
-                                </div>
-                                <div className="bg-purple-100 border border-purple-200 rounded-lg p-3">
-                                    <div className="text-xs font-semibold text-purple-700 mb-2">Add Event (lavender)</div>
-                                    <div className="flex gap-2">
-                                        <select value={newEventTitle} onChange={(e)=>setNewEventTitle(e.target.value)} className="flex-1 px-2 py-1 border border-purple-200 rounded text-xs">
-                                            <option value="">Select an event…</option>
-                                            <option value="Movie night">Movie night</option>
-                                            <option value="Dinner">Dinner</option>
-                                            <option value="Appointment">Appointment</option>
-                                            <option value="Call family">Call family</option>
-                                        </select>
-                                        <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={()=>{ addEventForDay(selectedDayStr, newEventTitle); setNewEventTitle(''); }}>Add</button>
+                                        <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder={newItemType==='task' ? 'Task title' : 'Event title'} className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+                                        <button className="text-xs bg-blue-600 text-white rounded px-3 py-1 hover:bg-blue-700" onClick={()=>{
+                                            if (newItemType==='task') { addTaskForDay(selectedDayStr, newItemTitle); }
+                                            else { addEventForDay(selectedDayStr, newItemTitle); }
+                                            setNewItemTitle('');
+                                        }}>Add</button>
                                     </div>
                                 </div>
                             </div>
