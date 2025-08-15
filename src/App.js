@@ -153,8 +153,8 @@ export default function App() {
             const newLastUpdated = new Date(completedDate);
             const newNext = new Date(newLastUpdated);
             newNext.setDate(newNext.getDate() + r.reminderDays);
-            // After finishing (green), next cycle becomes planned (blue)
-            const updated = { ...r, plannedDate: newNext.toISOString(), lastUpdated: newLastUpdated.toISOString(), nextUpdate: null, history: backlog };
+            // After finishing (red), next cycle becomes planned (blue) and also exists as a blue reminder on day it is due
+            const updated = { ...r, plannedDate: newNext.toISOString(), lastUpdated: newLastUpdated.toISOString(), nextUpdate: newNext.toISOString(), history: backlog };
             if (db) {
                 updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
             }
@@ -278,8 +278,10 @@ export default function App() {
             });
 
             const updatedTodayFiltered = updatedToday;
-            const dueTodayFiltered = dueToday;
-            const scheduledTodayFiltered = scheduledToday;
+            const toDoTodayMap = new Map();
+            scheduledToday.forEach((r) => toDoTodayMap.set(r.id, r));
+            dueToday.forEach((r) => toDoTodayMap.set(r.id, r));
+            const toDoToday = Array.from(toDoTodayMap.values());
             const historyTodayFiltered = historyToday;
 
             calendarDays.push(
@@ -293,8 +295,8 @@ export default function App() {
                         {updatedTodayFiltered.map((r) => (
                             <div
                                 key={`u-${r.id}`}
-                                className="w-full text-[10px] text-white bg-green-500 rounded-lg shadow px-1.5 py-0.5 truncate"
-                                title={`'${r.category}' updated on ${new Date(r.lastUpdated).toLocaleDateString()}`}
+                                className="w-full text-[10px] text-white bg-red-500 rounded-lg shadow px-1.5 py-0.5 truncate"
+                                title={`'${r.category}' done on ${new Date(r.lastUpdated).toLocaleDateString()}`}
                             >
                                 <div className="flex justify-between items-center">
                                     <span className="font-medium truncate flex items-center gap-1">
@@ -309,7 +311,7 @@ export default function App() {
                                 </div>
                             </div>
                         ))}
-                        {scheduledTodayFiltered.map((r) => (
+                        {toDoToday.map((r) => (
                             <button
                                 key={`s-${r.id}`}
                                 onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
@@ -332,7 +334,7 @@ export default function App() {
                         {historyTodayFiltered.map((h) => (
                             <div
                                 key={h.key}
-                                className="w-full text-[10px] text-white bg-blue-500 rounded-lg shadow px-1.5 py-0.5 truncate"
+                                className="w-full text-[10px] text-white bg-purple-400 rounded-lg shadow px-1.5 py-0.5 truncate"
                                 title={`'${h.category}' previously updated on ${new Date(h.date).toLocaleDateString()}`}
                             >
                                 <div className="flex justify-between items-center">
