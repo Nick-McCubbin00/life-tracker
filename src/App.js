@@ -28,6 +28,7 @@ export default function App() {
     // weekly upcoming removed
     const [remoteError, setRemoteError] = useState('');
     const [usingRemote, setUsingRemote] = useState(false);
+    const [filterLavenderOnly, setFilterLavenderOnly] = useState(false);
 
     // Load reminders from Firestore if configured, else fallback to localStorage
     useEffect(() => {
@@ -229,10 +230,16 @@ export default function App() {
                 const hist = Array.isArray(r.history) ? r.history : [];
                 hist.forEach((h, idx) => {
                     if (formatDate(h) === dayStr && formatDate(r.lastUpdated) !== dayStr) {
-                        historyToday.push({ key: `h-${r.id}-${idx}`, category: r.category, date: h });
+                        historyToday.push({ key: `h-${r.id}-${idx}`, category: r.category, date: h, isWeekly: r.reminderDays === 7 });
                     }
                 });
             });
+
+            const isWeekly = (r) => r.reminderDays === 7;
+            const updatedTodayFiltered = filterLavenderOnly ? updatedToday.filter(isWeekly) : updatedToday;
+            const dueTodayFiltered = filterLavenderOnly ? dueToday.filter(isWeekly) : dueToday;
+            const scheduledTodayFiltered = filterLavenderOnly ? scheduledToday.filter(isWeekly) : scheduledToday;
+            const historyTodayFiltered = filterLavenderOnly ? historyToday.filter(h => h.isWeekly) : historyToday;
 
             calendarDays.push(
                 <div
@@ -242,7 +249,7 @@ export default function App() {
                 >
                     <span className="font-medium text-gray-700">{day}</span>
                     <div className="mt-1 w-full space-y-1">
-                        {updatedToday.map((r) => (
+                        {updatedTodayFiltered.map((r) => (
                             <div
                                 key={`u-${r.id}`}
                                 className="w-full text-[10px] text-white bg-green-500 rounded-lg shadow px-1.5 py-0.5 truncate"
@@ -253,7 +260,7 @@ export default function App() {
                                 </div>
                             </div>
                         ))}
-                        {scheduledToday.map((r) => (
+                        {scheduledTodayFiltered.map((r) => (
                             <button
                                 key={`s-${r.id}`}
                                 onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
@@ -265,7 +272,7 @@ export default function App() {
                                 </div>
                             </button>
                         ))}
-                        {historyToday.map((h) => (
+                        {historyTodayFiltered.map((h) => (
                             <div
                                 key={h.key}
                                 className="w-full text-[10px] text-white bg-blue-500 rounded-lg shadow px-1.5 py-0.5 truncate"
@@ -276,7 +283,7 @@ export default function App() {
                                 </div>
                             </div>
                         ))}
-                        {dueToday.map((r) => (
+                        {dueTodayFiltered.map((r) => (
                             <button
                                 key={`d-${r.id}`}
                                 onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
@@ -321,6 +328,13 @@ export default function App() {
                             ) : (
                                 <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
                             )}
+                            <button
+                                onClick={() => setFilterLavenderOnly(v => !v)}
+                                className={`text-xs rounded px-2 py-1 border ${filterLavenderOnly ? 'bg-purple-100 border-purple-300 text-purple-700' : 'bg-white border-gray-300 text-gray-700'} hover:bg-purple-50`}
+                                title="Toggle to show only weekly (lavender) items"
+                            >
+                                {filterLavenderOnly ? 'Showing: Weekly Only' : 'Showing: All'}
+                            </button>
                             <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
                                 <ChevronLeft className="text-gray-600" size={20} />
                             </button>
