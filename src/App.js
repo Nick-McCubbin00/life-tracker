@@ -1175,3 +1175,30 @@ export default function App() {
         </div>
     );
 }
+
+// Inline subcomponent for adding checklist items
+function AddChecklistInline({ onAdd }) {
+    const [text, setText] = React.useState('');
+    const handleAdd = () => {
+        const trimmed = text.trim();
+        if (!trimmed) return;
+        onAdd(trimmed);
+        setText('');
+    };
+    return (
+        <div className="mt-2 flex items-center gap-2">
+            <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Add checklist item"
+                className="flex-1 px-2 py-1 border border-gray-300 rounded"
+            />
+            <button
+                className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
+                onClick={handleAdd}
+            >
+                Add
+            </button>
+        </div>
+    );
+}
