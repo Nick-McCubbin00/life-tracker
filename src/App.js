@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, Database, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, Database, Info, ListTodo, CalendarDays, Flame, ShoppingCart, Star, Target } from 'lucide-react';
 import { db } from './firebase';
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -18,6 +18,7 @@ const formatDate = (date) => {
 // Main App Component
 export default function App() {
     // State management
+    const [activeTab, setActiveTab] = useState('calendar');
     const [currentDate, setCurrentDate] = useState(new Date());
     const [reminderDays, setReminderDays] = useState(30);
     const [inputDate, setInputDate] = useState('');
@@ -34,6 +35,29 @@ export default function App() {
     const [editingNotesId, setEditingNotesId] = useState(null);
     const [noteDraft, setNoteDraft] = useState('');
 
+    // Extended entities
+    const [tasks, setTasks] = useState([]);
+    const [habits, setHabits] = useState([]);
+    const [groceries, setGroceries] = useState([]);
+    const [requests, setRequests] = useState([]);
+
+    // Inputs
+    const [taskTitle, setTaskTitle] = useState('');
+    const [taskFrequency, setTaskFrequency] = useState('daily');
+    const [taskDueDate, setTaskDueDate] = useState('');
+
+    const [habitName, setHabitName] = useState('');
+    const [habitCadence, setHabitCadence] = useState('daily');
+
+    const [groceryName, setGroceryName] = useState('');
+    const [groceryQty, setGroceryQty] = useState('');
+    const [groceryCategory, setGroceryCategory] = useState('');
+
+    const [requestTitle, setRequestTitle] = useState('');
+    const [requestPriority, setRequestPriority] = useState('medium');
+    const [requestDue, setRequestDue] = useState('');
+    const [requestDetails, setRequestDetails] = useState('');
+
     // Load reminders from Firestore if configured, else fallback to localStorage
     useEffect(() => {
         // settings fallback
@@ -47,7 +71,9 @@ export default function App() {
 
         if (db) {
             setUsingRemote(true);
-            const unsub = onSnapshot(
+            const unsubs = [];
+            // Reminders
+            unsubs.push(onSnapshot(
                 collection(db, 'reminders'),
                 (snap) => {
                     const rows = [];
@@ -55,17 +81,88 @@ export default function App() {
                     setReminders(rows);
                     try { localStorage.setItem('reminders', JSON.stringify(rows)); } catch (_) {}
                 },
-                (err) => {
-                    setRemoteError(err?.message || 'Sync error');
-                }
-            );
-            return () => unsub();
+                (err) => setRemoteError(err?.message || 'Sync error')
+            ));
+            // Tasks
+            unsubs.push(onSnapshot(
+                collection(db, 'tasks'),
+                (snap) => {
+                    const rows = [];
+                    snap.forEach((d) => rows.push(d.data()));
+                    setTasks(rows);
+                    try { localStorage.setItem('tasks', JSON.stringify(rows)); } catch (_) {}
+                },
+                (err) => setRemoteError(err?.message || 'Sync error')
+            ));
+            // Habits
+            unsubs.push(onSnapshot(
+                collection(db, 'habits'),
+                (snap) => {
+                    const rows = [];
+                    snap.forEach((d) => rows.push(d.data()));
+                    setHabits(rows);
+                    try { localStorage.setItem('habits', JSON.stringify(rows)); } catch (_) {}
+                },
+                (err) => setRemoteError(err?.message || 'Sync error')
+            ));
+            // Groceries
+            unsubs.push(onSnapshot(
+                collection(db, 'groceries'),
+                (snap) => {
+                    const rows = [];
+                    snap.forEach((d) => rows.push(d.data()));
+                    setGroceries(rows);
+                    try { localStorage.setItem('groceries', JSON.stringify(rows)); } catch (_) {}
+                },
+                (err) => setRemoteError(err?.message || 'Sync error')
+            ));
+            // Requests
+            unsubs.push(onSnapshot(
+                collection(db, 'requests'),
+                (snap) => {
+                    const rows = [];
+                    snap.forEach((d) => rows.push(d.data()));
+                    setRequests(rows);
+                    try { localStorage.setItem('requests', JSON.stringify(rows)); } catch (_) {}
+                },
+                (err) => setRemoteError(err?.message || 'Sync error')
+            ));
+
+            return () => unsubs.forEach((u) => { try { u(); } catch (_) {} });
         } else {
             try {
                 const savedReminders = localStorage.getItem('reminders');
                 if (savedReminders) {
                     const parsed = JSON.parse(savedReminders);
                     if (Array.isArray(parsed)) setReminders(parsed);
+                }
+            } catch (_) {}
+            try {
+                const savedTasks = localStorage.getItem('tasks');
+                if (savedTasks) {
+                    const parsed = JSON.parse(savedTasks);
+                    if (Array.isArray(parsed)) setTasks(parsed);
+                }
+            } catch (_) {}
+            try {
+                const savedHabits = localStorage.getItem('habits');
+                if (savedHabits) {
+                    const parsed = JSON.parse(savedHabits);
+                    if (Array.isArray(parsed)) setHabits(parsed);
+                }
+            } catch (_) {}
+            try {
+                const savedGroceries = localStorage.getItem('groceries');
+                if (savedGroceries) {
+                    const parsed = JSON.parse(savedGroceries);
+                    if (Array.isArray(parsed)) setGroceries(parsed);
+                }
+            } catch (_) {}
+            try {
+                const savedRequests = localStorage.getItem('requests');
+                if (savedRequests) {
+                    const parsed = JSON.parse(savedRequests);
+                    if (Array.isArray(parsed)) setRequests(parsed);
                 }
             } catch (_) {}
         }
@@ -82,6 +179,12 @@ export default function App() {
             localStorage.setItem('reminderDays', String(reminderDays));
         } catch (_) {}
     }, [reminderDays]);
+
+    // Persist other collections
+    useEffect(() => { try { localStorage.setItem('tasks', JSON.stringify(tasks)); } catch (_) {} }, [tasks]);
+    useEffect(() => { try { localStorage.setItem('habits', JSON.stringify(habits)); } catch (_) {} }, [habits]);
+    useEffect(() => { try { localStorage.setItem('groceries', JSON.stringify(groceries)); } catch (_) {} }, [groceries]);
+    useEffect(() => { try { localStorage.setItem('requests', JSON.stringify(requests)); } catch (_) {} }, [requests]);
 
     // Prefill the add-item form with the selected day when opening the day modal
     useEffect(() => {
@@ -245,6 +348,193 @@ export default function App() {
 
     // no range-based color mapping
 
+    // Utilities
+    const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const startOfWeek = (date) => {
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() - day;
+        return new Date(d.getFullYear(), d.getMonth(), diff);
+    };
+    const endOfWeek = (date) => {
+        const s = startOfWeek(date);
+        return new Date(s.getFullYear(), s.getMonth(), s.getDate() + 6);
+    };
+    const isDateInWeek = (iso, refDate) => {
+        if (!iso) return false;
+        const d = new Date(iso);
+        const s = startOfWeek(refDate);
+        const e = endOfWeek(refDate);
+        return d >= s && d <= e;
+    };
+
+    // Tasks
+    const handleAddTask = () => {
+        const title = taskTitle.trim();
+        if (!title) return;
+        const id = generateId();
+        const payload = {
+            id,
+            title,
+            frequency: taskFrequency,
+            dueDate: taskDueDate ? new Date(taskDueDate).toISOString() : null,
+            checklist: [],
+            completedDates: [],
+            notes: '',
+            createdAt: serverTimestamp ? serverTimestamp() : null,
+        };
+        setTasks((prev) => [...prev, payload]);
+        if (db) setDoc(doc(collection(db, 'tasks'), id), payload).catch((e) => setRemoteError(e?.message || 'Failed to save task'));
+        setTaskTitle('');
+        setTaskDueDate('');
+        setTaskFrequency('daily');
+    };
+    const toggleTaskDoneToday = (taskId) => {
+        const todayStr = formatDate(new Date());
+        setTasks((prev) => prev.map((t) => {
+            if (t.id !== taskId) return t;
+            const done = Array.isArray(t.completedDates) && t.completedDates.includes(todayStr);
+            const updated = { ...t, completedDates: done ? t.completedDates.filter((d) => d !== todayStr) : [...(t.completedDates || []), todayStr] };
+            if (db) updateDoc(doc(collection(db, 'tasks'), t.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update task'));
+            return updated;
+        }));
+    };
+    const deleteTask = (taskId) => {
+        setTasks((prev) => prev.filter((t) => t.id !== taskId));
+        if (db) deleteDoc(doc(collection(db, 'tasks'), taskId)).catch((e) => setRemoteError(e?.message || 'Failed to delete task'));
+    };
+    const addChecklistItem = (taskId, text) => {
+        const trimmed = (text || '').trim();
+        if (!trimmed) return;
+        setTasks((prev) => prev.map((t) => {
+            if (t.id !== taskId) return t;
+            const newItem = { id: generateId(), text: trimmed, done: false };
+            const updated = { ...t, checklist: [...(t.checklist || []), newItem] };
+            if (db) updateDoc(doc(collection(db, 'tasks'), t.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update task'));
+            return updated;
+        }));
+    };
+    const toggleChecklistItem = (taskId, itemId) => {
+        setTasks((prev) => prev.map((t) => {
+            if (t.id !== taskId) return t;
+            const updated = { ...t, checklist: (t.checklist || []).map((i) => i.id === itemId ? { ...i, done: !i.done } : i) };
+            if (db) updateDoc(doc(collection(db, 'tasks'), t.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update task'));
+            return updated;
+        }));
+    };
+    const removeChecklistItem = (taskId, itemId) => {
+        setTasks((prev) => prev.map((t) => {
+            if (t.id !== taskId) return t;
+            const updated = { ...t, checklist: (t.checklist || []).filter((i) => i.id !== itemId) };
+            if (db) updateDoc(doc(collection(db, 'tasks'), t.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update task'));
+            return updated;
+        }));
+    };
+
+    // Habits
+    const handleAddHabit = () => {
+        const name = habitName.trim();
+        if (!name) return;
+        const id = generateId();
+        const payload = { id, name, cadence: habitCadence, log: {}, createdAt: serverTimestamp ? serverTimestamp() : null };
+        setHabits((prev) => [...prev, payload]);
+        if (db) setDoc(doc(collection(db, 'habits'), id), payload).catch((e) => setRemoteError(e?.message || 'Failed to save habit'));
+        setHabitName('');
+        setHabitCadence('daily');
+    };
+    const toggleHabitToday = (habitId) => {
+        const todayStr = formatDate(new Date());
+        setHabits((prev) => prev.map((h) => {
+            if (h.id !== habitId) return h;
+            const newLog = { ...(h.log || {}) };
+            if (newLog[todayStr]) delete newLog[todayStr]; else newLog[todayStr] = true;
+            const updated = { ...h, log: newLog };
+            if (db) updateDoc(doc(collection(db, 'habits'), h.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update habit'));
+            return updated;
+        }));
+    };
+    const deleteHabit = (habitId) => {
+        setHabits((prev) => prev.filter((h) => h.id !== habitId));
+        if (db) deleteDoc(doc(collection(db, 'habits'), habitId)).catch((e) => setRemoteError(e?.message || 'Failed to delete habit'));
+    };
+
+    // Groceries
+    const handleAddGrocery = () => {
+        const name = groceryName.trim();
+        if (!name) return;
+        const id = generateId();
+        const payload = { id, name, quantity: groceryQty.trim() || '1', category: groceryCategory.trim() || '', checked: false, createdAt: serverTimestamp ? serverTimestamp() : null };
+        setGroceries((prev) => [...prev, payload]);
+        if (db) setDoc(doc(collection(db, 'groceries'), id), payload).catch((e) => setRemoteError(e?.message || 'Failed to save grocery'));
+        setGroceryName('');
+        setGroceryQty('');
+        setGroceryCategory('');
+    };
+    const toggleGrocery = (groceryId) => {
+        setGroceries((prev) => prev.map((g) => {
+            if (g.id !== groceryId) return g;
+            const updated = { ...g, checked: !g.checked };
+            if (db) updateDoc(doc(collection(db, 'groceries'), g.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update grocery'));
+            return updated;
+        }));
+    };
+    const clearCheckedGroceries = () => {
+        const remaining = groceries.filter((g) => !g.checked);
+        setGroceries(remaining);
+        if (db) {
+            const removed = groceries.filter((g) => g.checked);
+            removed.forEach((g) => deleteDoc(doc(collection(db, 'groceries'), g.id)).catch(() => {}));
+        }
+    };
+    const deleteGrocery = (groceryId) => {
+        setGroceries((prev) => prev.filter((g) => g.id !== groceryId));
+        if (db) deleteDoc(doc(collection(db, 'groceries'), groceryId)).catch((e) => setRemoteError(e?.message || 'Failed to delete grocery'));
+    };
+
+    // Requests
+    const handleAddRequest = () => {
+        const title = requestTitle.trim();
+        if (!title) return;
+        const id = generateId();
+        const payload = {
+            id,
+            title,
+            details: requestDetails.trim(),
+            priority: requestPriority,
+            requestedDueDate: requestDue ? new Date(requestDue).toISOString() : null,
+            approved: false,
+            approvedDueDate: null,
+            status: 'pending',
+            createdAt: serverTimestamp ? serverTimestamp() : null,
+        };
+        setRequests((prev) => [...prev, payload]);
+        if (db) setDoc(doc(collection(db, 'requests'), id), payload).catch((e) => setRemoteError(e?.message || 'Failed to save request'));
+        setRequestTitle('');
+        setRequestDetails('');
+        setRequestDue('');
+        setRequestPriority('medium');
+    };
+    const approveRequest = (requestId, newDueDateStr) => {
+        setRequests((prev) => prev.map((r) => {
+            if (r.id !== requestId) return r;
+            const updated = { ...r, approved: true, status: 'approved', approvedDueDate: newDueDateStr ? new Date(newDueDateStr).toISOString() : (r.requestedDueDate || null) };
+            if (db) updateDoc(doc(collection(db, 'requests'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to approve request'));
+            return updated;
+        }));
+    };
+    const completeRequest = (requestId) => {
+        setRequests((prev) => prev.map((r) => {
+            if (r.id !== requestId) return r;
+            const updated = { ...r, status: 'completed' };
+            if (db) updateDoc(doc(collection(db, 'requests'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to complete request'));
+            return updated;
+        }));
+    };
+    const deleteRequest = (requestId) => {
+        setRequests((prev) => prev.filter((r) => r.id !== requestId));
+        if (db) deleteDoc(doc(collection(db, 'requests'), requestId)).catch((e) => setRemoteError(e?.message || 'Failed to delete request'));
+    };
+
     // Calendar rendering logic
     const renderCalendar = () => {
         const calendarDays = [];
@@ -347,7 +637,27 @@ export default function App() {
         <div className="bg-gray-50 min-h-screen flex items-center justify-center p-4 font-sans">
             <div className="w-full max-w-7xl mx-auto space-y-4">
 
+                {/* Tabs */}
+                <div className="bg-white p-2 rounded-2xl shadow border border-gray-200">
+                    <div className="flex flex-wrap gap-2 items-center">
+                        <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
+                        <button onClick={() => setActiveTab('focus')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='focus' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Target size={16} /> Focus</button>
+                        <button onClick={() => setActiveTab('tasks')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='tasks' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ListTodo size={16} /> Tasks</button>
+                        <button onClick={() => setActiveTab('habits')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='habits' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Flame size={16} /> Habits</button>
+                        <button onClick={() => setActiveTab('groceries')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='groceries' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ShoppingCart size={16} /> Groceries</button>
+                        <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
+                        <div className="ml-auto">
+                            {usingRemote ? (
+                                <span className="text-xs text-green-700 bg-green-100 border border-green-200 rounded px-2 py-1">Synced</span>
+                            ) : (
+                                <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
                 {/* --- Calendar Display --- */}
+                {activeTab === 'calendar' && (
                 <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
@@ -379,6 +689,283 @@ export default function App() {
                         </div>
                     )}
                 </div>
+                )}
+
+                {/* Focus Tab */}
+                {activeTab === 'focus' && (
+                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-6">
+                    <div className="text-xl font-bold text-gray-800">Focus</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <div className="text-sm font-semibold text-gray-700 mb-2">Today</div>
+                            <div className="space-y-2">
+                                {tasks.filter((t)=>{
+                                    const todayStr = formatDate(new Date());
+                                    if (t.frequency==='daily') return true;
+                                    if (t.frequency==='oneoff') return formatDate(t.dueDate)===todayStr;
+                                    if (t.frequency==='weekly') return isDateInWeek(t.dueDate, new Date()) && new Date(t.dueDate).getDay()===new Date().getDay();
+                                    if (t.frequency==='monthly') return new Date(t.dueDate || new Date()).getDate()===new Date().getDate();
+                                    return false;
+                                }).map((t)=>{
+                                    const doneToday = Array.isArray(t.completedDates) && t.completedDates.includes(formatDate(new Date()));
+                                    return (
+                                        <div key={t.id} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                            <div>
+                                                <div className={`text-sm font-semibold ${doneToday ? 'line-through text-gray-500' : 'text-gray-800'}`}>{t.title}</div>
+                                                <div className="text-xs text-gray-500 capitalize">{t.frequency}{t.dueDate ? ` · due ${new Date(t.dueDate).toLocaleDateString()}` : ''}</div>
+                                            </div>
+                                            <button className={`text-xs rounded px-2 py-1 ${doneToday ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`} onClick={()=>toggleTaskDoneToday(t.id)}>{doneToday ? 'Done' : 'Mark'}</button>
+                                        </div>
+                                    )
+                                })}
+                                {tasks.length===0 && <div className="text-xs text-gray-500">No tasks yet.</div>}
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-sm font-semibold text-gray-700 mb-2">This Week</div>
+                            <div className="space-y-2">
+                                {tasks.filter((t)=>{
+                                    if (t.frequency==='daily') return true;
+                                    if (t.frequency==='oneoff') return isDateInWeek(t.dueDate, new Date());
+                                    if (t.frequency==='weekly') return isDateInWeek(t.dueDate, new Date());
+                                    if (t.frequency==='monthly') return new Date(t.dueDate || new Date()).getMonth()===new Date().getMonth();
+                                    return false;
+                                }).map((t)=> (
+                                    <div key={t.id} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                        <div>
+                                            <div className="text-sm font-semibold text-gray-800">{t.title}</div>
+                                            <div className="text-xs text-gray-500 capitalize">{t.frequency}{t.dueDate ? ` · due ${new Date(t.dueDate).toLocaleDateString()}` : ''}</div>
+                                        </div>
+                                        <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={()=>toggleTaskDoneToday(t.id)}>Mark today</button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                )}
+
+                {/* Tasks Tab */}
+                {activeTab === 'tasks' && (
+                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-6">
+                    <div className="text-xl font-bold text-gray-800">Tasks</div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                            <input value={taskTitle} onChange={(e)=>setTaskTitle(e.target.value)} placeholder="Task title" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                            <select value={taskFrequency} onChange={(e)=>setTaskFrequency(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                                <option value="oneoff">One-off</option>
+                            </select>
+                            <input type="date" value={taskDueDate} onChange={(e)=>setTaskDueDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                            <button onClick={handleAddTask} className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700">Add Task</button>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {['daily','weekly','monthly'].map((freq)=> (
+                            <div key={freq}>
+                                <div className="text-sm font-semibold text-gray-700 mb-2 capitalize">{freq}</div>
+                                <div className="space-y-2">
+                                    {tasks.filter((t)=>t.frequency===freq).map((t)=>{
+                                        const doneToday = Array.isArray(t.completedDates) && t.completedDates.includes(formatDate(new Date()));
+                                        return (
+                                            <div key={t.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <div className={`text-sm font-semibold ${doneToday ? 'line-through text-gray-500' : 'text-gray-800'}`}>{t.title}</div>
+                                                        <div className="text-xs text-gray-500">{t.dueDate ? `Due ${new Date(t.dueDate).toLocaleDateString()}` : 'No due date'}</div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button className={`text-xs rounded px-2 py-1 ${doneToday ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`} onClick={()=>toggleTaskDoneToday(t.id)}>{doneToday ? 'Done' : 'Mark today'}</button>
+                                                        <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div className="text-xs font-semibold text-gray-600 mb-1">Checklist</div>
+                                                    <div className="space-y-1">
+                                                        {(t.checklist || []).map((i)=> (
+                                                            <label key={i.id} className="flex items-center gap-2 text-xs">
+                                                                <input type="checkbox" checked={!!i.done} onChange={()=>toggleChecklistItem(t.id, i.id)} />
+                                                                <span className={i.done ? 'line-through text-gray-500' : ''}>{i.text}</span>
+                                                                <button className="ml-auto text-gray-500 hover:text-gray-800" onClick={()=>removeChecklistItem(t.id, i.id)}><Trash2 size={12}/></button>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                    <AddChecklistInline onAdd={(text)=>addChecklistItem(t.id, text)} />
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                    {tasks.filter((t)=>t.frequency===freq).length===0 && (
+                                        <div className="text-xs text-gray-500">No {freq} tasks.</div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        <div>
+                            <div className="text-sm font-semibold text-gray-700 mb-2">One-off</div>
+                            <div className="space-y-2">
+                                {tasks.filter((t)=>t.frequency==='oneoff').map((t)=> (
+                                    <div key={t.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <div className="text-sm font-semibold text-gray-800">{t.title}</div>
+                                                <div className="text-xs text-gray-500">{t.dueDate ? `Due ${new Date(t.dueDate).toLocaleDateString()}` : 'No due date'}</div>
+                                            </div>
+                                            <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
+                                        </div>
+                                        <div>
+                                            <div className="text-xs font-semibold text-gray-600 mb-1">Checklist</div>
+                                            <div className="space-y-1">
+                                                {(t.checklist || []).map((i)=> (
+                                                    <label key={i.id} className="flex items-center gap-2 text-xs">
+                                                        <input type="checkbox" checked={!!i.done} onChange={()=>toggleChecklistItem(t.id, i.id)} />
+                                                        <span className={i.done ? 'line-through text-gray-500' : ''}>{i.text}</span>
+                                                        <button className="ml-auto text-gray-500 hover:text-gray-800" onClick={()=>removeChecklistItem(t.id, i.id)}><Trash2 size={12}/></button>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                            <AddChecklistInline onAdd={(text)=>addChecklistItem(t.id, text)} />
+                                        </div>
+                                    </div>
+                                ))}
+                                {tasks.filter((t)=>t.frequency==='oneoff').length===0 && (
+                                    <div className="text-xs text-gray-500">No one-off tasks.</div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                )}
+
+                {/* Habits Tab */}
+                {activeTab === 'habits' && (
+                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-6">
+                    <div className="text-xl font-bold text-gray-800">Habits</div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                            <input value={habitName} onChange={(e)=>setHabitName(e.target.value)} placeholder="Habit name" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                            <select value={habitCadence} onChange={(e)=>setHabitCadence(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                            </select>
+                            <div className="md:col-span-1" />
+                            <button onClick={handleAddHabit} className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700">Add Habit</button>
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        {habits.map((h)=>{
+                            const todayStr = formatDate(new Date());
+                            const checked = !!(h.log || {})[todayStr];
+                            return (
+                                <div key={h.id} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                    <div>
+                                        <div className="text-sm font-semibold text-gray-800">{h.name}</div>
+                                        <div className="text-xs text-gray-500 capitalize">{h.cadence}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button className={`text-xs rounded px-2 py-1 ${checked ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`} onClick={()=>toggleHabitToday(h.id)}>{checked ? 'Done today' : 'Mark today'}</button>
+                                        <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={()=>deleteHabit(h.id)}><Trash2 size={14}/></button>
+                                    </div>
+                                </div>
+                            )
+                        })}
+                        {habits.length===0 && <div className="text-xs text-gray-500">No habits yet.</div>}
+                    </div>
+                </div>
+                )}
+
+                {/* Groceries Tab */}
+                {activeTab === 'groceries' && (
+                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-6">
+                    <div className="text-xl font-bold text-gray-800">Groceries</div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+                            <input value={groceryName} onChange={(e)=>setGroceryName(e.target.value)} placeholder="Item" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                            <input value={groceryQty} onChange={(e)=>setGroceryQty(e.target.value)} placeholder="Qty" className="px-3 py-2 border border-gray-300 rounded-lg" />
+                            <input value={groceryCategory} onChange={(e)=>setGroceryCategory(e.target.value)} placeholder="Category" className="px-3 py-2 border border-gray-300 rounded-lg" />
+                            <div className="md:col-span-1" />
+                            <button onClick={handleAddGrocery} className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700">Add Item</button>
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        {groceries.map((g)=> (
+                            <label key={g.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                                <input type="checkbox" checked={!!g.checked} onChange={()=>toggleGrocery(g.id)} />
+                                <div>
+                                    <div className={`text-sm font-semibold ${g.checked ? 'line-through text-gray-500' : 'text-gray-800'}`}>{g.name} {g.quantity ? `· ${g.quantity}` : ''}</div>
+                                    <div className="text-xs text-gray-500">{g.category}</div>
+                                </div>
+                                <button className="ml-auto text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={()=>deleteGrocery(g.id)}><Trash2 size={14}/></button>
+                            </label>
+                        ))}
+                        {groceries.length===0 && <div className="text-xs text-gray-500">No items yet.</div>}
+                        {groceries.some((g)=>g.checked) && (
+                            <div className="pt-2">
+                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={clearCheckedGroceries}>Clear checked</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+                )}
+
+                {/* Requests Tab */}
+                {activeTab === 'requests' && (
+                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-6">
+                    <div className="text-xl font-bold text-gray-800">Fiancé Requests</div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                            <input value={requestTitle} onChange={(e)=>setRequestTitle(e.target.value)} placeholder="Title" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                            <select value={requestPriority} onChange={(e)=>setRequestPriority(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                            </select>
+                            <input type="date" value={requestDue} onChange={(e)=>setRequestDue(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                            <input value={requestDetails} onChange={(e)=>setRequestDetails(e.target.value)} placeholder="Details" className="px-3 py-2 border border-gray-300 rounded-lg md:col-span-2" />
+                            <button onClick={handleAddRequest} className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700">Add</button>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {['pending','approved','completed'].map((status)=> (
+                            <div key={status}>
+                                <div className="text-sm font-semibold text-gray-700 mb-2 capitalize">{status}</div>
+                                <div className="space-y-2">
+                                    {requests.filter((r)=>r.status===status).sort((a,b)=>{
+                                        const pri = { high: 0, medium: 1, low: 2 };
+                                        return pri[a.priority]-pri[b.priority];
+                                    }).map((r)=> (
+                                        <div key={r.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <div className="text-sm font-semibold text-gray-800">{r.title}</div>
+                                                    <div className="text-xs text-gray-500">Priority: <span className="capitalize">{r.priority}</span>{r.requestedDueDate ? ` · requested ${new Date(r.requestedDueDate).toLocaleDateString()}` : ''}{r.approvedDueDate ? ` · due ${new Date(r.approvedDueDate).toLocaleDateString()}` : ''}</div>
+                                                </div>
+                                                <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>
+                                            </div>
+                                            {status==='pending' && (
+                                                <div className="mt-2 flex items-center gap-2">
+                                                    <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>approveRequest(r.id, e.target.value)} className="px-2 py-1 border border-gray-300 rounded" />
+                                                    <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : '')}>Approve</button>
+                                                </div>
+                                            )}
+                                            {status==='approved' && (
+                                                <div className="mt-2 flex items-center gap-2">
+                                                    <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Mark done</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                    {requests.filter((r)=>r.status===status).length===0 && (
+                                        <div className="text-xs text-gray-500">No {status} items.</div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                )}
             </div>
 
             {/* Weekly Upcoming panel removed */}
