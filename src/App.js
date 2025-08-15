@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2 } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, Database, Info } from 'lucide-react';
 import { db } from './firebase';
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -29,6 +29,8 @@ export default function App() {
     const [remoteError, setRemoteError] = useState('');
     const [usingRemote, setUsingRemote] = useState(false);
     const [filterLavenderOnly, setFilterLavenderOnly] = useState(false);
+    const [infoMessage, setInfoMessage] = useState('');
+    const infoTimerRef = useRef(null);
 
     // Load reminders from Firestore if configured, else fallback to localStorage
     useEffect(() => {
@@ -126,6 +128,7 @@ export default function App() {
             nextUpdate: null,
             // keep a backlog of previous update dates (rendered as blue)
             history: [],
+            dataPulled: false,
             createdAt: serverTimestamp ? serverTimestamp() : null,
         };
         setReminders((prev) => [...prev, newReminder]);
@@ -188,6 +191,15 @@ export default function App() {
         }));
     };
 
+    const toggleDataPulled = (reminderId) => {
+        setReminders((prev) => prev.map((r) => {
+            if (r.id !== reminderId) return r;
+            const updated = { ...r, dataPulled: !r.dataPulled };
+            if (db) updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
+            return updated;
+        }));
+    };
+
     const handleDeleteReminder = (reminderId) => {
         setReminders((prev) => prev.filter((r) => r.id !== reminderId));
         if (db) deleteDoc(doc(collection(db, 'reminders'), reminderId)).catch((e) => setRemoteError(e?.message || 'Failed to delete on server'));
@@ -201,6 +213,14 @@ export default function App() {
             if (db) updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
             return updated;
         }));
+    };
+
+    const showReminderInfo = (reminder) => {
+        const days = reminder?.reminderDays;
+        const msg = days ? `"${reminder.category}" reminds every ${days} day${days === 1 ? '' : 's'}` : 'No reminder interval set';
+        setInfoMessage(msg);
+        if (infoTimerRef.current) clearTimeout(infoTimerRef.current);
+        infoTimerRef.current = setTimeout(() => setInfoMessage(''), 2500);
     };
 
     // Calendar rendering logic
@@ -256,7 +276,15 @@ export default function App() {
                                 title={`'${r.category}' updated on ${new Date(r.lastUpdated).toLocaleDateString()}`}
                             >
                                 <div className="flex justify-between items-center">
-                                    <span className="font-medium truncate">{r.category}</span>
+                                    <span className="font-medium truncate flex items-center gap-1">
+                                        {r.category}
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                        {r.dataPulled && <Database size={12} />}
+                                        <button className="p-0.5 rounded hover:bg-white/10" onClick={(e) => { e.stopPropagation(); showReminderInfo(r); }} title="Show reminder interval">
+                                            <Info size={12} />
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -268,7 +296,15 @@ export default function App() {
                                 title={`'${r.category}' scheduled on ${new Date(r.plannedDate).toLocaleDateString()} (click to mark done)`}
                             >
                                 <div className="flex justify-between items-center">
-                                    <span className="font-medium truncate">{r.category}</span>
+                                    <span className="font-medium truncate flex items-center gap-1">
+                                        {r.category}
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                        {r.dataPulled && <Database size={12} />}
+                                        <button className="p-0.5 rounded hover:bg-white/10" onClick={(e) => { e.stopPropagation(); showReminderInfo(r); }} title="Show reminder interval">
+                                            <Info size={12} />
+                                        </button>
+                                    </div>
                                 </div>
                             </button>
                         ))}
@@ -279,7 +315,9 @@ export default function App() {
                                 title={`'${h.category}' previously updated on ${new Date(h.date).toLocaleDateString()}`}
                             >
                                 <div className="flex justify-between items-center">
-                                    <span className="font-medium truncate">{h.category}</span>
+                                    <span className="font-medium truncate flex items-center gap-1">
+                                        {h.category}
+                                    </span>
                                 </div>
                             </div>
                         ))}
@@ -291,7 +329,15 @@ export default function App() {
                                 title={`'${r.category}' due on ${new Date(r.nextUpdate).toLocaleDateString()} (click to complete)`}
                             >
                                 <div className="flex justify-between items-center">
-                                    <span className="font-medium truncate">{r.category}</span>
+                                    <span className="font-medium truncate flex items-center gap-1">
+                                        {r.category}
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                        {r.dataPulled && <Database size={12} />}
+                                        <button className="p-0.5 rounded hover:bg-white/10" onClick={(e) => { e.stopPropagation(); showReminderInfo(r); }} title="Show reminder interval">
+                                            <Info size={12} />
+                                        </button>
+                                    </div>
                                 </div>
                             </button>
                         ))}
@@ -360,6 +406,13 @@ export default function App() {
 
             {/* Weekly Upcoming panel removed */}
 
+            {/* Floating info toast */}
+            {infoMessage && (
+                <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white text-sm px-3 py-2 rounded-lg shadow-lg">
+                    {infoMessage}
+                </div>
+            )}
+
             {/* --- Day Details Modal --- */}
             {selectedDayStr && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30 p-4" onClick={() => setSelectedDayStr(null)}>
@@ -422,13 +475,17 @@ export default function App() {
                                         {reminders.filter((r) => !r.lastUpdated && formatDate(r.plannedDate) === selectedDayStr).map((r) => (
                                             <div key={`dlg-s-${r.id}`} className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
                                                 <div>
-                                                    <div className="text-sm font-semibold text-blue-700">{r.category}</div>
+                                                    <div className="text-sm font-semibold text-blue-700 flex items-center gap-2">
+                                                        {r.category}
+                                                        {r.dataPulled && <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100 border border-purple-200 rounded px-1 py-0.5"><Database size={12} /> Data</span>}
+                                                    </div>
                                                     <div className="text-xs text-blue-600">Scheduled on {new Date(r.plannedDate).toLocaleDateString()}</div>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
                                                     <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
                                                     <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
+                                                    <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Toggle Data</button>
                                                 </div>
                                             </div>
                                         ))}
@@ -446,13 +503,17 @@ export default function App() {
                                         {reminders.filter((r) => formatDate(r.lastUpdated) === selectedDayStr).map((r) => (
                                             <div key={`dlg-u-${r.id}`} className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-3 py-2">
                                                 <div>
-                                                    <div className="text-sm font-semibold text-green-700">{r.category}</div>
+                                                    <div className="text-sm font-semibold text-green-700 flex items-center gap-2">
+                                                        {r.category}
+                                                        {r.dataPulled && <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100 border border-purple-200 rounded px-1 py-0.5"><Database size={12} /> Data</span>}
+                                                    </div>
                                                     <div className="text-xs text-green-600">Updated on {new Date(r.lastUpdated).toLocaleDateString()}</div>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
                                                     <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
                                                     <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
+                                                    <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Toggle Data</button>
                                                     <button
                                                         className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
                                                         title="Delete item"
@@ -477,13 +538,17 @@ export default function App() {
                                         {reminders.filter((r) => formatDate(r.nextUpdate) === selectedDayStr).map((r) => (
                                             <div key={`dlg-d-${r.id}`} className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                                                 <div>
-                                                    <div className="text-sm font-semibold text-red-700">{r.category}</div>
+                                                    <div className="text-sm font-semibold text-red-700 flex items-center gap-2">
+                                                        {r.category}
+                                                        {r.dataPulled && <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100 border border-purple-200 rounded px-1 py-0.5"><Database size={12} /> Data</span>}
+                                                    </div>
                                                     <div className="text-xs text-red-600">Due on {new Date(r.nextUpdate).toLocaleDateString()}</div>
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
                                                     <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
                                                     <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
+                                                    <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Toggle Data</button>
                                                     <button
                                                         className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
                                                         title="Delete item"
