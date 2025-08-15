@@ -153,7 +153,8 @@ export default function App() {
             const newLastUpdated = new Date(completedDate);
             const newNext = new Date(newLastUpdated);
             newNext.setDate(newNext.getDate() + r.reminderDays);
-            const updated = { ...r, plannedDate: null, lastUpdated: newLastUpdated.toISOString(), nextUpdate: newNext.toISOString(), history: backlog };
+            // After finishing (green), next cycle becomes planned (blue)
+            const updated = { ...r, plannedDate: newNext.toISOString(), lastUpdated: newLastUpdated.toISOString(), nextUpdate: null, history: backlog };
             if (db) {
                 updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
             }
@@ -181,18 +182,7 @@ export default function App() {
         handleCompleteReminder(reminderId, targetDate);
     };
 
-    const setStatusRed = (reminderId, targetDate) => {
-        setReminders((prev) => prev.map((r) => {
-            if (r.id !== reminderId) return r;
-            const updated = {
-                ...r,
-                nextUpdate: new Date(targetDate).toISOString(),
-                plannedDate: (formatDate(r.plannedDate) === formatDate(targetDate)) ? null : r.plannedDate,
-            };
-            if (db) updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
-            return updated;
-        }));
-    };
+    // Removed explicit Red status
 
     const toggleDataPulled = (reminderId) => {
         setReminders((prev) => prev.map((r) => {
@@ -352,26 +342,7 @@ export default function App() {
                                 </div>
                             </div>
                         ))}
-                        {dueTodayFiltered.map((r) => (
-                            <button
-                                key={`d-${r.id}`}
-                                onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
-                                className={`w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate transition-colors bg-red-500 hover:bg-red-400`}
-                                title={`'${r.category}' due on ${new Date(r.nextUpdate).toLocaleDateString()} (click to complete)`}
-                            >
-                                <div className="flex justify-between items-center">
-                                    <span className="font-medium truncate flex items-center gap-1">
-                                        {r.category}
-                                    </span>
-                                    <div className="flex items-center gap-1">
-                                        {r.dataPulled && <Database size={12} />}
-                                        <button className="p-0.5 rounded hover:bg-white/10" onClick={(e) => { e.stopPropagation(); showReminderInfo(r); }} title="Show reminder interval">
-                                            <Info size={12} />
-                                        </button>
-                                    </div>
-                                </div>
-                            </button>
-                        ))}
+                        {/* Red/due state removed */}
                     </div>
                 </div>
             );
@@ -510,7 +481,7 @@ export default function App() {
                                                     <div className="flex items-center gap-2">
                                                         <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
                                                         <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
-                                                        <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
+                                                        
                                                         <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Data</button>
                                                         <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={() => startEditNotes(r)}>Notes</button>
                                                     </div>
@@ -552,7 +523,7 @@ export default function App() {
                                                     <div className="flex items-center gap-2">
                                                         <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
                                                         <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
-                                                        <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
+                                                        
                                                         <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Data</button>
                                                         <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={() => startEditNotes(r)}>Notes</button>
                                                         <button
@@ -601,7 +572,7 @@ export default function App() {
                                                     <div className="flex items-center gap-2">
                                                         <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
                                                         <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
-                                                        <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
+                                                        
                                                         <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Data</button>
                                                         <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={() => startEditNotes(r)}>Notes</button>
                                                         <button
