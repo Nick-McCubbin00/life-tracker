@@ -28,7 +28,7 @@ export default function App() {
     // weekly upcoming removed
     const [remoteError, setRemoteError] = useState('');
     const [usingRemote, setUsingRemote] = useState(false);
-    const [filterRange, setFilterRange] = useState('all'); // 'all' | '0-7' | '8-14' | '14-30' | '31-60' | '>60'
+    // simplified colors: blue/green/red only
     const [infoMessage, setInfoMessage] = useState('');
     const infoTimerRef = useRef(null);
     const [editingNotesId, setEditingNotesId] = useState(null);
@@ -253,33 +253,7 @@ export default function App() {
         setNoteDraft('');
     };
 
-    // helpers for range-based styling and filtering
-    const getRangeGroup = (days) => {
-        if (days == null) return 'all';
-        if (days <= 7) return '0-7';
-        if (days <= 14) return '8-14';
-        if (days <= 30) return '14-30';
-        if (days <= 60) return '31-60';
-        return '>60';
-    };
-
-    const getIntervalClasses = (days, variant) => {
-        const group = getRangeGroup(days);
-        switch (group) {
-            case '0-7':
-                return variant === 'due' ? 'bg-purple-500 hover:bg-purple-400' : 'bg-purple-400 hover:bg-purple-300';
-            case '8-14':
-                return variant === 'due' ? 'bg-sky-500 hover:bg-sky-400' : 'bg-sky-400 hover:bg-sky-300';
-            case '14-30':
-                return variant === 'due' ? 'bg-amber-500 hover:bg-amber-400' : 'bg-amber-400 hover:bg-amber-300';
-            case '31-60':
-                return variant === 'due' ? 'bg-teal-700 hover:bg-teal-600' : 'bg-teal-600 hover:bg-teal-500';
-            case '>60':
-                return variant === 'due' ? 'bg-orange-600 hover:bg-orange-500' : 'bg-orange-500 hover:bg-orange-400';
-            default:
-                return variant === 'due' ? 'bg-gray-500 hover:bg-gray-400' : 'bg-gray-400 hover:bg-gray-300';
-        }
-    };
+    // no range-based color mapping
 
     // Calendar rendering logic
     const renderCalendar = () => {
@@ -313,14 +287,10 @@ export default function App() {
                 });
             });
 
-            const inFilterRange = (r) => {
-                if (filterRange === 'all') return true;
-                return getRangeGroup(r.reminderDays) === filterRange;
-            };
-            const updatedTodayFiltered = updatedToday.filter(inFilterRange);
-            const dueTodayFiltered = dueToday.filter(inFilterRange);
-            const scheduledTodayFiltered = scheduledToday.filter(inFilterRange);
-            const historyTodayFiltered = historyToday.filter((h) => filterRange === 'all' ? true : (h.isWeekly && filterRange === '0-7'));
+            const updatedTodayFiltered = updatedToday;
+            const dueTodayFiltered = dueToday;
+            const scheduledTodayFiltered = scheduledToday;
+            const historyTodayFiltered = historyToday;
 
             calendarDays.push(
                 <div
@@ -353,7 +323,7 @@ export default function App() {
                             <button
                                 key={`s-${r.id}`}
                                 onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
-                                className={`w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate transition-colors ${getIntervalClasses(r.reminderDays, 'scheduled')}`}
+                                className={`w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate transition-colors bg-blue-500 hover:bg-blue-400`}
                                 title={`'${r.category}' scheduled on ${new Date(r.plannedDate).toLocaleDateString()} (click to mark done)`}
                             >
                                 <div className="flex justify-between items-center">
@@ -386,7 +356,7 @@ export default function App() {
                             <button
                                 key={`d-${r.id}`}
                                 onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
-                                className={`w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate transition-colors ${getIntervalClasses(r.reminderDays, 'due')}`}
+                                className={`w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate transition-colors bg-red-500 hover:bg-red-400`}
                                 title={`'${r.category}' due on ${new Date(r.nextUpdate).toLocaleDateString()} (click to complete)`}
                             >
                                 <div className="flex justify-between items-center">
@@ -435,19 +405,7 @@ export default function App() {
                             ) : (
                                 <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
                             )}
-                            <select
-                                value={filterRange}
-                                onChange={(e) => setFilterRange(e.target.value)}
-                                className="text-xs border border-gray-300 rounded px-2 py-1 bg-white text-gray-700"
-                                title="Filter by reminder interval"
-                            >
-                                <option value="all">All</option>
-                                <option value="0-7">0-7 days</option>
-                                <option value="8-14">8-14 days</option>
-                                <option value="14-30">14-30 days</option>
-                                <option value="31-60">31-60 days</option>
-                                <option value=">60">&gt; 60 days</option>
-                            </select>
+                            
                             <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
                                 <ChevronLeft className="text-gray-600" size={20} />
                             </button>
