@@ -324,7 +324,10 @@ export default function App() {
                 <div
                     key={dayStr}
                     className={dayClasses + " cursor-pointer hover:bg-gray-50"}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setSelectedDayStr(dayStr)}
+                    onKeyDown={(e)=>{ if (e.key==='Enter' || e.key===' ') setSelectedDayStr(dayStr); }}
                 >
                     <span className="font-medium text-gray-700">{day}</span>
                     <div className="mt-1 w-full space-y-1">
@@ -495,6 +498,80 @@ export default function App() {
                                     </label>
                                 );
                             })}
+                        </div>
+                    </div>
+                </div>
+                )}
+
+                {/* Day Modal */}
+                {selectedDayStr && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/30" onClick={()=>setSelectedDayStr(null)} />
+                    <div className="relative bg-white w-full max-w-2xl mx-4 rounded-2xl shadow-xl border border-gray-200 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="text-lg font-bold text-gray-800">{new Date(selectedDayStr+"T00:00:00").toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric'})}</div>
+                            <button className="p-1 rounded hover:bg-gray-100" onClick={()=>setSelectedDayStr(null)}><X size={18} /></button>
+                        </div>
+                        <div className="space-y-3">
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-center">
+                                    <select value={newItemType} onChange={(e)=>setNewItemType(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                                        <option value="task">Task</option>
+                                        <option value="event">Event</option>
+                                    </select>
+                                    {newItemType==='task' && (
+                                        <select value={newTaskRecurrence} onChange={(e)=>setNewTaskRecurrence(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                                            <option value="none">One-time</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="biweekly">Biweekly</option>
+                                            <option value="monthly">Monthly</option>
+                                        </select>
+                                    )}
+                                    <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder={newItemType==='task'?"Add task":"Add event"} className="md:col-span-3 px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                                        const t = (newItemTitle||'').trim(); if (!t) return;
+                                        if (newItemType==='task') { addTaskForDay(selectedDayStr, t, newTaskRecurrence); }
+                                        else { addEventForDay(selectedDayStr, t); }
+                                        setNewItemTitle('');
+                                        setNewTaskRecurrence('none');
+                                    }}>Add</button>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                    <div className="text-sm font-semibold text-gray-700">Tasks</div>
+                                    {tasks.filter(t=> occursOnDay(t, parseYmd(selectedDayStr))).map((t)=>{
+                                        const checked = isTaskDoneOnDate(t, selectedDayStr);
+                                        return (
+                                            <label key={t.id} className="flex items-center gap-2 rounded bg-blue-50 border border-blue-200 px-2 py-2 text-xs">
+                                                <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
+                                                <span className={checked ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
+                                                {t.recurrence && t.recurrence!=='none' && <span className="ml-1 text-[10px] text-blue-700">({t.recurrence})</span>}
+                                                <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={12}/></button>
+                                            </label>
+                                        );
+                                    })}
+                                    {tasks.filter(t=> occursOnDay(t, parseYmd(selectedDayStr))).length===0 && (
+                                        <div className="text-xs text-gray-500">No tasks for this day.</div>
+                                    )}
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="text-sm font-semibold text-gray-700">Events</div>
+                                    {events.filter(e=> e.date===selectedDayStr).map((e)=> (
+                                        <div key={e.id} className="w-full text-[12px] rounded-lg shadow px-2 py-1" style={{ backgroundColor: '#E6E6FA' }}>
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-medium text-gray-800 truncate">{e.title}</span>
+                                                <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=>deleteEvent(e.id)}><Trash2 size={14}/></button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {events.filter(e=> e.date===selectedDayStr).length===0 && (
+                                        <div className="text-xs text-gray-500">No events for this day.</div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
