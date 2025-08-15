@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, AlertTriangle, X, Trash2, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2 } from 'lucide-react';
 import { db } from './firebase';
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -25,7 +25,7 @@ export default function App() {
     const [reminders, setReminders] = useState([]);
     const [error, setError] = useState('');
     const [selectedDayStr, setSelectedDayStr] = useState(null);
-    const [showWeeklyUpcoming, setShowWeeklyUpcoming] = useState(false);
+    // weekly upcoming removed
     const [remoteError, setRemoteError] = useState('');
     const [usingRemote, setUsingRemote] = useState(false);
 
@@ -112,18 +112,17 @@ export default function App() {
         }
         setError('');
 
-        const lastUpdatedDate = new Date(inputDate);
+        const planned = new Date(inputDate);
         const days = parseInt(reminderDays, 10);
-        const nextUpdateDate = new Date(lastUpdatedDate);
-        nextUpdateDate.setDate(nextUpdateDate.getDate() + days);
 
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const newReminder = {
             id,
             category: category.trim(),
             reminderDays: days,
-            lastUpdated: lastUpdatedDate.toISOString(),
-            nextUpdate: nextUpdateDate.toISOString(),
+            plannedDate: planned.toISOString(),
+            lastUpdated: null,
+            nextUpdate: null,
             // keep a backlog of previous update dates (rendered as blue)
             history: [],
             createdAt: serverTimestamp ? serverTimestamp() : null,
@@ -147,10 +146,43 @@ export default function App() {
             const newLastUpdated = new Date(completedDate);
             const newNext = new Date(newLastUpdated);
             newNext.setDate(newNext.getDate() + r.reminderDays);
-            const updated = { ...r, lastUpdated: newLastUpdated.toISOString(), nextUpdate: newNext.toISOString(), history: backlog };
+            const updated = { ...r, plannedDate: null, lastUpdated: newLastUpdated.toISOString(), nextUpdate: newNext.toISOString(), history: backlog };
             if (db) {
                 updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
             }
+            return updated;
+        }));
+    };
+
+    // Manual status controls
+    const setStatusBlue = (reminderId, targetDate) => {
+        setReminders((prev) => prev.map((r) => {
+            if (r.id !== reminderId) return r;
+            const updated = {
+                ...r,
+                plannedDate: new Date(targetDate).toISOString(),
+                // if we are reverting the same-day green, clear it
+                lastUpdated: (formatDate(r.lastUpdated) === formatDate(targetDate)) ? null : r.lastUpdated,
+                nextUpdate: null,
+            };
+            if (db) updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
+            return updated;
+        }));
+    };
+
+    const setStatusGreen = (reminderId, targetDate) => {
+        handleCompleteReminder(reminderId, targetDate);
+    };
+
+    const setStatusRed = (reminderId, targetDate) => {
+        setReminders((prev) => prev.map((r) => {
+            if (r.id !== reminderId) return r;
+            const updated = {
+                ...r,
+                nextUpdate: new Date(targetDate).toISOString(),
+                plannedDate: (formatDate(r.plannedDate) === formatDate(targetDate)) ? null : r.plannedDate,
+            };
+            if (db) updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
             return updated;
         }));
     };
@@ -186,11 +218,12 @@ export default function App() {
             const dayDate = new Date(year, month, day);
             const dayStr = formatDate(dayDate);
 
-            let dayClasses = "relative p-2 h-24 text-sm border-r border-b border-gray-200 flex flex-col justify-start items-start transition-colors duration-200 overflow-hidden";
+            let dayClasses = "relative p-2 h-36 text-xs border-r border-b border-gray-200 flex flex-col justify-start items-start transition-colors duration-200 overflow-hidden";
             if (dayStr === todayStr) dayClasses += " bg-blue-50";
 
             const updatedToday = reminders.filter(r => formatDate(r.lastUpdated) === dayStr);
             const dueToday = reminders.filter(r => formatDate(r.nextUpdate) === dayStr);
+            const scheduledToday = reminders.filter(r => (!r.lastUpdated && formatDate(r.plannedDate) === dayStr));
             const historyToday = [];
             reminders.forEach((r) => {
                 const hist = Array.isArray(r.history) ? r.history : [];
@@ -220,10 +253,22 @@ export default function App() {
                                 </div>
                             </div>
                         ))}
+                        {scheduledToday.map((r) => (
+                            <button
+                                key={`s-${r.id}`}
+                                onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
+                                className="w-full text-[11px] text-white bg-blue-500 rounded-lg shadow-md px-2 py-1 truncate hover:bg-blue-400 transition-colors"
+                                title={`'${r.category}' scheduled on ${new Date(r.plannedDate).toLocaleDateString()} (click to mark done)`}
+                            >
+                                <div className="flex justify-between items-center">
+                                    <span className="font-medium truncate">{r.category}</span>
+                                </div>
+                            </button>
+                        ))}
                         {historyToday.map((h) => (
                             <div
                                 key={h.key}
-                                className="w-full text-xs text-white bg-blue-500 rounded-lg shadow-md px-2 py-1 truncate"
+                                className="w-full text-[11px] text-white bg-blue-500 rounded-lg shadow-md px-2 py-1 truncate"
                                 title={`'${h.category}' previously updated on ${new Date(h.date).toLocaleDateString()}`}
                             >
                                 <div className="flex justify-between items-center">
@@ -235,7 +280,7 @@ export default function App() {
                             <button
                                 key={`d-${r.id}`}
                                 onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
-                                className="w-full text-xs text-white bg-red-500 rounded-lg shadow-md px-2 py-1 truncate hover:bg-red-200 hover:text-red-600 transition-colors"
+                                className="w-full text-[11px] text-white bg-red-500 rounded-lg shadow-md px-2 py-1 truncate hover:bg-red-200 hover:text-red-600 transition-colors"
                                 title={`'${r.category}' due on ${new Date(r.nextUpdate).toLocaleDateString()} (click to complete)`}
                             >
                                 <div className="flex justify-between items-center">
@@ -260,47 +305,12 @@ export default function App() {
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-    // Weekly upcoming breakdown (current week Sun-Sat)
+    // compute 'today' for highlighting
     const today = new Date();
-    const weekStart = new Date(today);
-    weekStart.setDate(today.getDate() - today.getDay());
-    weekStart.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
-    weekEnd.setHours(23, 59, 59, 999);
-
-    const weekStartMs = weekStart.getTime();
-    const weekEndMs = weekEnd.getTime();
-    const weeklyUpcoming = useMemo(() => {
-        return reminders
-            .filter((r) => {
-                const nextMs = new Date(r.nextUpdate).getTime();
-                return nextMs >= weekStartMs && nextMs <= weekEndMs;
-            })
-            .sort((a, b) => new Date(a.nextUpdate) - new Date(b.nextUpdate));
-    }, [reminders, weekStartMs, weekEndMs]);
 
     return (
         <div className="bg-gray-50 min-h-screen flex items-center justify-center p-4 font-sans">
-            <div className="w-full max-w-6xl mx-auto space-y-4">
-                {/* Top Toolbar */}
-                <div className="flex items-center justify-between bg-white p-3 rounded-xl shadow border border-gray-200">
-                    <div className="flex items-center gap-2 text-gray-700">
-                        <CalendarIcon size={18} />
-                        <span className="font-semibold">Calendar</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setShowWeeklyUpcoming((v) => !v)}
-                            className="inline-flex items-center gap-2 bg-purple-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-purple-700"
-                        >
-                            This Week's Upcoming
-                            <span className="inline-flex items-center justify-center text-xs bg-white/20 rounded px-2 py-0.5">
-                                {weeklyUpcoming.length}
-                            </span>
-                        </button>
-                    </div>
-                </div>
+            <div className="w-full max-w-7xl mx-auto space-y-4">
 
                 {/* --- Calendar Display --- */}
                 <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
@@ -335,48 +345,7 @@ export default function App() {
                 </div>
             </div>
 
-            {/* Floating Weekly Upcoming Panel */}
-            {showWeeklyUpcoming && (
-                <div className="fixed right-4 top-20 z-40 w-80 max-w-[90vw] bg-white p-4 rounded-2xl shadow-2xl border border-gray-200">
-                    <div className="flex items-center justify-between mb-2">
-                        <h2 className="text-lg font-bold text-gray-800">This Week's Upcoming</h2>
-                        <button className="p-2 rounded hover:bg-gray-100" onClick={() => setShowWeeklyUpcoming(false)} aria-label="Close upcoming">
-                            <X size={18} />
-                        </button>
-                    </div>
-                    <p className="text-gray-600 mb-3 text-sm">Due between {weekStart.toLocaleDateString()} and {weekEnd.toLocaleDateString()}.</p>
-                    {weeklyUpcoming.length === 0 ? (
-                        <p className="text-sm text-gray-500">No reminders due this week.</p>
-                    ) : (
-                        <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                            {weeklyUpcoming.map((r) => (
-                                <div key={`wk-${r.id}`} className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                                    <div className="min-w-0">
-                                        <div className="text-sm font-semibold text-red-700 truncate">{r.category}</div>
-                                        <div className="text-xs text-red-600">Due {new Date(r.nextUpdate).toLocaleDateString()}</div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            className="inline-flex items-center gap-1 text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700"
-                                            title="Mark complete today"
-                                            onClick={() => handleCompleteReminder(r.id, new Date())}
-                                        >
-                                            <Check size={14} />
-                                        </button>
-                                        <button
-                                            className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
-                                            title="Delete item"
-                                            onClick={() => handleDeleteReminder(r.id)}
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
+            {/* Weekly Upcoming panel removed */}
 
             {/* --- Day Details Modal --- */}
             {selectedDayStr && (
@@ -430,6 +399,30 @@ export default function App() {
                                     </button>
                                 </div>
                             </div>
+                            {/* Scheduled (Blue planned) */}
+                            <div>
+                                <div className="text-sm font-semibold text-gray-700 mb-2">Scheduled</div>
+                                {reminders.filter((r) => !r.lastUpdated && formatDate(r.plannedDate) === selectedDayStr).length === 0 ? (
+                                    <p className="text-xs text-gray-500">No scheduled items this day.</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {reminders.filter((r) => !r.lastUpdated && formatDate(r.plannedDate) === selectedDayStr).map((r) => (
+                                            <div key={`dlg-s-${r.id}`} className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                                                <div>
+                                                    <div className="text-sm font-semibold text-blue-700">{r.category}</div>
+                                                    <div className="text-xs text-blue-600">Scheduled on {new Date(r.plannedDate).toLocaleDateString()}</div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
+                                                    <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
+                                                    <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Updated Today (Green) */}
                             <div>
                                 <div className="text-sm font-semibold text-gray-700 mb-2">Updated</div>
@@ -443,13 +436,18 @@ export default function App() {
                                                     <div className="text-sm font-semibold text-green-700">{r.category}</div>
                                                     <div className="text-xs text-green-600">Updated on {new Date(r.lastUpdated).toLocaleDateString()}</div>
                                                 </div>
-                                                <button
-                                                    className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
-                                                    title="Delete item"
-                                                    onClick={() => handleDeleteReminder(r.id)}
-                                                >
-                                                    <Trash2 size={14} /> Delete
-                                                </button>
+                                                <div className="flex items-center gap-2">
+                                                    <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
+                                                    <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
+                                                    <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
+                                                    <button
+                                                        className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
+                                                        title="Delete item"
+                                                        onClick={() => handleDeleteReminder(r.id)}
+                                                    >
+                                                        <Trash2 size={14} /> Delete
+                                                    </button>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -470,13 +468,9 @@ export default function App() {
                                                     <div className="text-xs text-red-600">Due on {new Date(r.nextUpdate).toLocaleDateString()}</div>
                                                 </div>
                                                 <div className="flex items-center gap-2">
-                                                    <button
-                                                        className="inline-flex items-center gap-1 text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700"
-                                                        title="Mark complete for this day"
-                                                        onClick={() => handleCompleteReminder(r.id, new Date(selectedDayStr))}
-                                                    >
-                                                        <Check size={14} /> Complete
-                                                    </button>
+                                                    <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
+                                                    <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
+                                                    <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
                                                     <button
                                                         className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
                                                         title="Delete item"
