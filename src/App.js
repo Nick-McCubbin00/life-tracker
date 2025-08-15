@@ -161,6 +161,15 @@ export default function App() {
 
     // Utilities
     const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const parseYmd = (ymd) => {
+        if (!ymd) return new Date();
+        const parts = String(ymd).split('-').map((p) => parseInt(p, 10));
+        if (parts.length === 3 && !parts.some(isNaN)) {
+            return new Date(parts[0], parts[1]-1, parts[2]);
+        }
+        const d = new Date(ymd);
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    };
 
     // Tasks (as checklist items themselves)
     const addTaskForDay = (dayStr, title, recurrence = 'none') => {
@@ -308,7 +317,7 @@ export default function App() {
                                 <span className={`truncate ${isTaskDoneOnDate(t, dayStr) ? 'line-through' : ''}`}>{t.title}</span>
                                 {t.recurrence && t.recurrence !== 'none' && <span className="ml-1 opacity-80">({t.recurrence})</span>}
                                 <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>
-                            </div>
+                                    </div>
                         ))}
                         {requestsToday.map((r) => (
                             <div key={`rq-${r.id}`} className="w-full text-[10px] rounded-lg shadow px-1.5 py-0.5 truncate" style={{ backgroundColor: '#ffd6e7', color: '#7a2946' }} title={`${r.title} (${r.priority})`}>
@@ -411,27 +420,27 @@ export default function App() {
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
                             <div className="flex items-center gap-2">
-                                <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
-                                    <ChevronLeft className="text-gray-600" size={20} />
-                                </button>
-                                <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
-                                    <ChevronRight className="text-gray-600" size={20} />
-                                </button>
-                            </div>
+                            <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
+                                <ChevronLeft className="text-gray-600" size={20} />
+                            </button>
+                            <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
+                                <ChevronRight className="text-gray-600" size={20} />
+                            </button>
                         </div>
-                        <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500">
-                            {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200">{day}</div>)}
-                        </div>
-                        <div className="grid grid-cols-7 grid-rows-6">
-                            {renderCalendar()}
-                        </div>
-                        {remoteError && (
-                            <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
-                                <AlertTriangle size={14} />
-                                <span>{remoteError}</span>
-                            </div>
-                        )}
                     </div>
+                    <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500">
+                        {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200">{day}</div>)}
+                    </div>
+                    <div className="grid grid-cols-7 grid-rows-6">
+                        {renderCalendar()}
+                    </div>
+                    {remoteError && (
+                        <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
+                            <AlertTriangle size={14} />
+                            <span>{remoteError}</span>
+                        </div>
+                    )}
+                </div>
                     <div className="bg-white p-4 rounded-2xl shadow-lg border border-gray-200 h-fit lg:sticky lg:top-4">
                         <div className="flex items-center justify-between mb-2">
                             <h4 className="text-sm font-bold text-gray-800">Tasks</h4>
@@ -578,7 +587,7 @@ export default function App() {
                         <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
                             {/* Quick add for this day */}
                             <div className="grid grid-cols-1 gap-3">
-                                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                                     <div className="text-xs font-semibold text-gray-700 mb-2">Add to this day</div>
                                     <div className="flex gap-2 items-center flex-wrap">
                                         <select value={newItemType} onChange={(e)=>setNewItemType(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs w-28">
@@ -606,14 +615,14 @@ export default function App() {
 
                             {/* Lists for this day */}
                             <div className="grid grid-cols-1 gap-4">
-                                <div>
+                            <div>
                                     <div className="text-sm font-semibold text-gray-700 mb-2">Events</div>
                                     {events.filter(e=>e.date===selectedDayStr).length===0 ? <p className="text-xs text-gray-500">No events.</p> : (
                                         <div className="space-y-2">
                                             {events.filter(e=>e.date===selectedDayStr).map((ev)=>(
                                                 <div key={`dlg-ev-${ev.id}`} className="rounded bg-purple-100 border border-purple-200 px-3 py-2 text-sm">
                                                     {editingEventId===ev.id ? (
-                                                        <div className="space-y-2">
+                                    <div className="space-y-2">
                                                             <input value={editEventTitle} onChange={(e)=>setEditEventTitle(e.target.value)} className="w-full px-2 py-1 border border-purple-300 rounded text-sm" />
                                                             <textarea value={editEventNotes} onChange={(e)=>setEditEventNotes(e.target.value)} rows={2} className="w-full px-2 py-1 border border-purple-300 rounded text-xs" placeholder="Notes" />
                                                             <div className="flex justify-end gap-2">
@@ -629,26 +638,26 @@ export default function App() {
                                                             <div className="flex-1">
                                                                 <div className="font-semibold text-gray-800">{ev.title}</div>
                                                                 {ev.notes && <div className="text-xs text-gray-600 whitespace-pre-wrap">{ev.notes}</div>}
-                                                            </div>
-                                                            <div className="flex items-center gap-2">
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
                                                                 <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingEventId(ev.id); setEditEventTitle(ev.title); setEditEventNotes(ev.notes||''); }}>Edit</button>
                                                                 <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteEvent(ev.id)}><Trash2 size={14}/></button>
-                                                            </div>
-                                                        </div>
-                                                    )}
                                                 </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                                <div>
+                                                        </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <div>
                                     <div className="text-sm font-semibold text-gray-700 mb-2">Tasks</div>
-                                    {tasks.filter(t=>occursOnDay(t, new Date(selectedDayStr))).length===0 ? <p className="text-xs text-gray-500">No tasks.</p> : (
+                                    {tasks.filter(t=>occursOnDay(t, parseYmd(selectedDayStr))).length===0 ? <p className="text-xs text-gray-500">No tasks.</p> : (
                                         <div className="space-y-2">
-                                            {tasks.filter(t=>occursOnDay(t, new Date(selectedDayStr))).map((t)=>(
+                                            {tasks.filter(t=>occursOnDay(t, parseYmd(selectedDayStr))).map((t)=>(
                                                 <div key={`dlg-t-${t.id}`} className="rounded bg-blue-50 border border-blue-200 px-3 py-2 text-sm">
                                                     {editingTaskId===t.id ? (
-                                                        <div className="space-y-2">
+                                    <div className="space-y-2">
                                                             <div className="flex items-center gap-2">
                                                                 <input type="checkbox" checked={isTaskDoneOnDate(t, selectedDayStr)} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
                                                                 <input value={editTaskTitle} onChange={(e)=>setEditTaskTitle(e.target.value)} className="flex-1 px-2 py-1 border border-blue-300 rounded text-sm" />
@@ -672,19 +681,19 @@ export default function App() {
                                                             <div className="flex-1">
                                                                 <div className={isTaskDoneOnDate(t, selectedDayStr) ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title} {t.recurrence && t.recurrence!=='none' && <span className="text-xs text-gray-500">({t.recurrence})</span>}</div>
                                                                 {t.notes && <div className="text-xs text-gray-600 whitespace-pre-wrap">{t.notes}</div>}
-                                                            </div>
-                                                            <div className="flex items-center gap-2">
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
                                                                 <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingTaskId(t.id); setEditTaskTitle(t.title); setEditTaskNotes(t.notes||''); }}>Edit</button>
                                                                 <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
-                                                            </div>
-                                                        </div>
-                                                    )}
                                                 </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                                <div>
+                                                        </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <div>
                                     <div className="text-sm font-semibold text-gray-700 mb-2">Requests</div>
                                     {requests.filter(r=>r.status==='approved' && r.approvedDueDate && formatDate(r.approvedDueDate)===selectedDayStr).length===0 ? <p className="text-xs text-gray-500">No requests.</p> : (
                                         <div className="space-y-1">
