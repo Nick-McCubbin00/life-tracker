@@ -442,6 +442,7 @@ export default function App() {
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
                             <div className="flex items-center gap-2">
+                                <button onClick={()=> setSelectedDayStr(formatDate(new Date()))} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">Open Today</button>
                                 <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
                                     <ChevronLeft className="text-gray-600" size={20} />
                                 </button>
