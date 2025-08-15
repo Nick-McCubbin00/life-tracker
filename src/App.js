@@ -58,6 +58,10 @@ export default function App() {
     const [requestDue, setRequestDue] = useState('');
     const [requestDetails, setRequestDetails] = useState('');
 
+    // Backup/Restore in-progress state
+    const [isBackingUp, setIsBackingUp] = useState(false);
+    const [isRestoring, setIsRestoring] = useState(false);
+
     // Load reminders from Firestore if configured, else fallback to localStorage
     useEffect(() => {
         // settings fallback
@@ -646,12 +650,64 @@ export default function App() {
                         <button onClick={() => setActiveTab('habits')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='habits' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Flame size={16} /> Habits</button>
                         <button onClick={() => setActiveTab('groceries')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='groceries' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ShoppingCart size={16} /> Groceries</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
-                        <div className="ml-auto">
+                        <div className="ml-auto flex items-center gap-2">
                             {usingRemote ? (
                                 <span className="text-xs text-green-700 bg-green-100 border border-green-200 rounded px-2 py-1">Synced</span>
                             ) : (
                                 <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
                             )}
+                            <button
+                                disabled={isBackingUp}
+                                onClick={async ()=>{
+                                    try {
+                                        setIsBackingUp(true);
+                                        const payload = {
+                                            reminders,
+                                            tasks,
+                                            habits,
+                                            groceries,
+                                            requests,
+                                            exportedAt: new Date().toISOString(),
+                                        };
+                                        const resp = await fetch('/api/save-backup', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ data: payload })
+                                        });
+                                        const json = await resp.json();
+                                        if (!resp.ok) throw new Error(json?.error || 'Backup failed');
+                                        setInfoMessage('Backup saved');
+                                    } catch (e) {
+                                        setRemoteError(e?.message || 'Backup failed');
+                                    } finally {
+                                        setIsBackingUp(false);
+                                    }
+                                }}
+                                className={`text-xs rounded px-2 py-1 ${isBackingUp ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
+                            >{isBackingUp ? 'Backing up…' : 'Backup'}</button>
+                            <button
+                                disabled={isRestoring}
+                                onClick={async ()=>{
+                                    try {
+                                        setIsRestoring(true);
+                                        const resp = await fetch('/api/load-backup');
+                                        const json = await resp.json();
+                                        if (!resp.ok) throw new Error(json?.error || 'Restore failed');
+                                        const d = json?.data || {};
+                                        if (Array.isArray(d.reminders)) setReminders(d.reminders);
+                                        if (Array.isArray(d.tasks)) setTasks(d.tasks);
+                                        if (Array.isArray(d.habits)) setHabits(d.habits);
+                                        if (Array.isArray(d.groceries)) setGroceries(d.groceries);
+                                        if (Array.isArray(d.requests)) setRequests(d.requests);
+                                        setInfoMessage('Backup restored');
+                                    } catch (e) {
+                                        setRemoteError(e?.message || 'Restore failed');
+                                    } finally {
+                                        setIsRestoring(false);
+                                    }
+                                }}
+                                className={`text-xs rounded px-2 py-1 ${isRestoring ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
+                            >{isRestoring ? 'Restoring…' : 'Restore'}</button>
                         </div>
                     </div>
                 </div>
