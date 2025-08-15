@@ -245,7 +245,7 @@ export default function App() {
                         {updatedToday.map((r) => (
                             <div
                                 key={`u-${r.id}`}
-                                className="w-full text-xs text-white bg-green-500 rounded-lg shadow-md px-2 py-1 truncate"
+                                className="w-full text-[10px] text-white bg-green-500 rounded-lg shadow px-1.5 py-0.5 truncate"
                                 title={`'${r.category}' updated on ${new Date(r.lastUpdated).toLocaleDateString()}`}
                             >
                                 <div className="flex justify-between items-center">
@@ -257,7 +257,7 @@ export default function App() {
                             <button
                                 key={`s-${r.id}`}
                                 onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
-                                className="w-full text-[11px] text-white bg-blue-500 rounded-lg shadow-md px-2 py-1 truncate hover:bg-blue-400 transition-colors"
+                                className={`w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate transition-colors ${r.reminderDays === 7 ? 'bg-purple-400 hover:bg-purple-300' : 'bg-blue-500 hover:bg-blue-400'}`}
                                 title={`'${r.category}' scheduled on ${new Date(r.plannedDate).toLocaleDateString()} (click to mark done)`}
                             >
                                 <div className="flex justify-between items-center">
@@ -268,7 +268,7 @@ export default function App() {
                         {historyToday.map((h) => (
                             <div
                                 key={h.key}
-                                className="w-full text-[11px] text-white bg-blue-500 rounded-lg shadow-md px-2 py-1 truncate"
+                                className="w-full text-[10px] text-white bg-blue-500 rounded-lg shadow px-1.5 py-0.5 truncate"
                                 title={`'${h.category}' previously updated on ${new Date(h.date).toLocaleDateString()}`}
                             >
                                 <div className="flex justify-between items-center">
@@ -280,7 +280,7 @@ export default function App() {
                             <button
                                 key={`d-${r.id}`}
                                 onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
-                                className="w-full text-[11px] text-white bg-red-500 rounded-lg shadow-md px-2 py-1 truncate hover:bg-red-200 hover:text-red-600 transition-colors"
+                                className={`w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate transition-colors ${r.reminderDays === 7 ? 'bg-purple-500 hover:bg-purple-400' : 'bg-red-500 hover:bg-red-400'}`}
                                 title={`'${r.category}' due on ${new Date(r.nextUpdate).toLocaleDateString()} (click to complete)`}
                             >
                                 <div className="flex justify-between items-center">
@@ -305,8 +305,7 @@ export default function App() {
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-    // compute 'today' for highlighting
-    const today = new Date();
+    // 'today' computed inline in calendar rendering
 
     return (
         <div className="bg-gray-50 min-h-screen flex items-center justify-center p-4 font-sans">
