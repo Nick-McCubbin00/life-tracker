@@ -275,7 +275,7 @@ export default function App() {
             case '31-60':
                 return variant === 'due' ? 'bg-teal-700 hover:bg-teal-600' : 'bg-teal-600 hover:bg-teal-500';
             case '>60':
-                return variant === 'due' ? 'bg-emerald-400 hover:bg-emerald-300' : 'bg-emerald-300 hover:bg-emerald-200';
+                return variant === 'due' ? 'bg-orange-600 hover:bg-orange-500' : 'bg-orange-500 hover:bg-orange-400';
             default:
                 return variant === 'due' ? 'bg-gray-500 hover:bg-gray-400' : 'bg-gray-400 hover:bg-gray-300';
         }
