@@ -240,7 +240,7 @@ export default function App() {
 
             const tasksToday = tasks.filter(t => t.date === dayStr);
             const eventsToday = events.filter(e => e.date === dayStr);
-            const requestsToday = requests.filter(r => r.requestedDueDate && formatDate(r.requestedDueDate) === dayStr);
+            const requestsToday = requests.filter(r => r.status === 'approved' && r.approvedDueDate && formatDate(r.approvedDueDate) === dayStr);
 
             calendarDays.push(
                 <div
@@ -467,33 +467,32 @@ export default function App() {
                         </div>
                         <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
                             {/* Quick add for this day */}
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                                     <div className="text-xs font-semibold text-blue-700 mb-2">Add Task (blue)</div>
                                     <div className="flex gap-2">
-                                        <input value={newTaskTitle} onChange={(e)=>setNewTaskTitle(e.target.value)} placeholder="Task title" className="flex-1 px-2 py-1 border border-blue-200 rounded" />
+                                        <select value={newTaskTitle} onChange={(e)=>setNewTaskTitle(e.target.value)} className="flex-1 px-2 py-1 border border-blue-200 rounded text-xs">
+                                            <option value="">Select a task…</option>
+                                            <option value="Workout">Workout</option>
+                                            <option value="Laundry">Laundry</option>
+                                            <option value="Dishes">Dishes</option>
+                                            <option value="Clean kitchen">Clean kitchen</option>
+                                        </select>
                                         <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>{ addTaskForDay(selectedDayStr, newTaskTitle); setNewTaskTitle(''); }}>Add</button>
                                     </div>
                                 </div>
                                 <div className="bg-purple-100 border border-purple-200 rounded-lg p-3">
                                     <div className="text-xs font-semibold text-purple-700 mb-2">Add Event (lavender)</div>
                                     <div className="flex gap-2">
-                                        <input value={newEventTitle} onChange={(e)=>setNewEventTitle(e.target.value)} placeholder="Event title" className="flex-1 px-2 py-1 border border-purple-200 rounded" />
+                                        <select value={newEventTitle} onChange={(e)=>setNewEventTitle(e.target.value)} className="flex-1 px-2 py-1 border border-purple-200 rounded text-xs">
+                                            <option value="">Select an event…</option>
+                                            <option value="Movie night">Movie night</option>
+                                            <option value="Dinner">Dinner</option>
+                                            <option value="Appointment">Appointment</option>
+                                            <option value="Call family">Call family</option>
+                                        </select>
                                         <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={()=>{ addEventForDay(selectedDayStr, newEventTitle); setNewEventTitle(''); }}>Add</button>
                                     </div>
-                                </div>
-                                <div className="bg-pink-100 border border-pink-200 rounded-lg p-3">
-                                    <div className="text-xs font-semibold text-pink-700 mb-2">Add Request (light pink)</div>
-                                    <div className="flex gap-2">
-                                        <input value={newRequestTitle} onChange={(e)=>setNewRequestTitle(e.target.value)} placeholder="Request title" className="flex-1 px-2 py-1 border border-pink-200 rounded" />
-                                        <select value={newRequestPriority} onChange={(e)=>setNewRequestPriority(e.target.value)} className="px-2 py-1 border border-pink-200 rounded text-xs">
-                                            <option value="low">Low</option>
-                                            <option value="medium">Medium</option>
-                                            <option value="high">High</option>
-                                        </select>
-                                        <button className="text-xs bg-pink-600 text-white rounded px-2 py-1 hover:bg-pink-700" onClick={()=>{ handleAddRequest(selectedDayStr, newRequestTitle, newRequestPriority, requestDetails); }}>Add</button>
-                                    </div>
-                                    <textarea value={requestDetails} onChange={(e)=>setRequestDetails(e.target.value)} placeholder="Details (optional)" className="mt-2 w-full text-xs border border-pink-200 rounded px-2 py-1" rows={2} />
                                 </div>
                             </div>
 
@@ -528,9 +527,9 @@ export default function App() {
                                 </div>
                                 <div>
                                     <div className="text-sm font-semibold text-gray-700 mb-2">Requests</div>
-                                    {requests.filter(r=>r.requestedDueDate && formatDate(r.requestedDueDate)===selectedDayStr).length===0 ? <p className="text-xs text-gray-500">No requests.</p> : (
+                                    {requests.filter(r=>r.status==='approved' && r.approvedDueDate && formatDate(r.approvedDueDate)===selectedDayStr).length===0 ? <p className="text-xs text-gray-500">No requests.</p> : (
                                         <div className="space-y-1">
-                                            {requests.filter(r=>r.requestedDueDate && formatDate(r.requestedDueDate)===selectedDayStr).map((r)=>(
+                                            {requests.filter(r=>r.status==='approved' && r.approvedDueDate && formatDate(r.approvedDueDate)===selectedDayStr).map((r)=>(
                                                 <div key={`dlg-rq-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-sm" style={{ backgroundColor: '#ffd6e7', border: '1px solid #f5a6bd' }}>
                                                     <span className="text-[#7a2946]">{r.title} <span className="capitalize text-xs">({r.priority})</span></span>
                                                     <div className="flex items-center gap-2">
