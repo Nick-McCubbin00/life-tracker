@@ -28,9 +28,11 @@ export default function App() {
     // weekly upcoming removed
     const [remoteError, setRemoteError] = useState('');
     const [usingRemote, setUsingRemote] = useState(false);
-    const [filterLavenderOnly, setFilterLavenderOnly] = useState(false);
+    const [filterRange, setFilterRange] = useState('all'); // 'all' | '0-7' | '8-14' | '14-30' | '31-60' | '>60'
     const [infoMessage, setInfoMessage] = useState('');
     const infoTimerRef = useRef(null);
+    const [editingNotesId, setEditingNotesId] = useState(null);
+    const [noteDraft, setNoteDraft] = useState('');
 
     // Load reminders from Firestore if configured, else fallback to localStorage
     useEffect(() => {
@@ -129,6 +131,7 @@ export default function App() {
             // keep a backlog of previous update dates (rendered as blue)
             history: [],
             dataPulled: false,
+            notes: '',
             createdAt: serverTimestamp ? serverTimestamp() : null,
         };
         setReminders((prev) => [...prev, newReminder]);
@@ -217,10 +220,65 @@ export default function App() {
 
     const showReminderInfo = (reminder) => {
         const days = reminder?.reminderDays;
-        const msg = days ? `"${reminder.category}" reminds every ${days} day${days === 1 ? '' : 's'}` : 'No reminder interval set';
+        let nextDate = null;
+        if (reminder?.nextUpdate) nextDate = new Date(reminder.nextUpdate);
+        else if (reminder?.lastUpdated) { const d = new Date(reminder.lastUpdated); d.setDate(d.getDate() + (reminder.reminderDays || 0)); nextDate = d; }
+        else if (reminder?.plannedDate) { const d = new Date(reminder.plannedDate); d.setDate(d.getDate() + (reminder.reminderDays || 0)); nextDate = d; }
+        const nextStr = nextDate ? ` | Next: ${nextDate.toLocaleDateString()}` : '';
+        const msg = days ? `"${reminder.category}" reminds every ${days} day${days === 1 ? '' : 's'}${nextStr}` : 'No reminder interval set';
         setInfoMessage(msg);
         if (infoTimerRef.current) clearTimeout(infoTimerRef.current);
         infoTimerRef.current = setTimeout(() => setInfoMessage(''), 2500);
+    };
+
+    const startEditNotes = (reminder) => {
+        setEditingNotesId(reminder.id);
+        setNoteDraft(reminder.notes || '');
+    };
+
+    const saveNotes = (reminderId) => {
+        const trimmed = noteDraft.trim();
+        setReminders((prev) => prev.map((r) => {
+            if (r.id !== reminderId) return r;
+            const updated = { ...r, notes: trimmed };
+            if (db) updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
+            return updated;
+        }));
+        setEditingNotesId(null);
+        setNoteDraft('');
+    };
+
+    const cancelNotes = () => {
+        setEditingNotesId(null);
+        setNoteDraft('');
+    };
+
+    // helpers for range-based styling and filtering
+    const getRangeGroup = (days) => {
+        if (days == null) return 'all';
+        if (days <= 7) return '0-7';
+        if (days <= 14) return '8-14';
+        if (days <= 30) return '14-30';
+        if (days <= 60) return '31-60';
+        return '>60';
+    };
+
+    const getIntervalClasses = (days, variant) => {
+        const group = getRangeGroup(days);
+        switch (group) {
+            case '0-7':
+                return variant === 'due' ? 'bg-purple-500 hover:bg-purple-400' : 'bg-purple-400 hover:bg-purple-300';
+            case '8-14':
+                return variant === 'due' ? 'bg-sky-500 hover:bg-sky-400' : 'bg-sky-400 hover:bg-sky-300';
+            case '14-30':
+                return variant === 'due' ? 'bg-amber-500 hover:bg-amber-400' : 'bg-amber-400 hover:bg-amber-300';
+            case '31-60':
+                return variant === 'due' ? 'bg-teal-700 hover:bg-teal-600' : 'bg-teal-600 hover:bg-teal-500';
+            case '>60':
+                return variant === 'due' ? 'bg-emerald-400 hover:bg-emerald-300' : 'bg-emerald-300 hover:bg-emerald-200';
+            default:
+                return variant === 'due' ? 'bg-gray-500 hover:bg-gray-400' : 'bg-gray-400 hover:bg-gray-300';
+        }
     };
 
     // Calendar rendering logic
@@ -255,11 +313,14 @@ export default function App() {
                 });
             });
 
-            const isWeekly = (r) => r.reminderDays === 7;
-            const updatedTodayFiltered = filterLavenderOnly ? updatedToday.filter(isWeekly) : updatedToday;
-            const dueTodayFiltered = filterLavenderOnly ? dueToday.filter(isWeekly) : dueToday;
-            const scheduledTodayFiltered = filterLavenderOnly ? scheduledToday.filter(isWeekly) : scheduledToday;
-            const historyTodayFiltered = filterLavenderOnly ? historyToday.filter(h => h.isWeekly) : historyToday;
+            const inFilterRange = (r) => {
+                if (filterRange === 'all') return true;
+                return getRangeGroup(r.reminderDays) === filterRange;
+            };
+            const updatedTodayFiltered = updatedToday.filter(inFilterRange);
+            const dueTodayFiltered = dueToday.filter(inFilterRange);
+            const scheduledTodayFiltered = scheduledToday.filter(inFilterRange);
+            const historyTodayFiltered = historyToday.filter((h) => filterRange === 'all' ? true : (h.isWeekly && filterRange === '0-7'));
 
             calendarDays.push(
                 <div
@@ -292,7 +353,7 @@ export default function App() {
                             <button
                                 key={`s-${r.id}`}
                                 onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
-                                className={`w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate transition-colors ${r.reminderDays === 7 ? 'bg-purple-400 hover:bg-purple-300' : 'bg-blue-500 hover:bg-blue-400'}`}
+                                className={`w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate transition-colors ${getIntervalClasses(r.reminderDays, 'scheduled')}`}
                                 title={`'${r.category}' scheduled on ${new Date(r.plannedDate).toLocaleDateString()} (click to mark done)`}
                             >
                                 <div className="flex justify-between items-center">
@@ -325,7 +386,7 @@ export default function App() {
                             <button
                                 key={`d-${r.id}`}
                                 onClick={(e) => { e.stopPropagation(); handleCompleteReminder(r.id, dayDate); }}
-                                className={`w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate transition-colors ${r.reminderDays === 7 ? 'bg-purple-500 hover:bg-purple-400' : 'bg-red-500 hover:bg-red-400'}`}
+                                className={`w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate transition-colors ${getIntervalClasses(r.reminderDays, 'due')}`}
                                 title={`'${r.category}' due on ${new Date(r.nextUpdate).toLocaleDateString()} (click to complete)`}
                             >
                                 <div className="flex justify-between items-center">
@@ -374,13 +435,19 @@ export default function App() {
                             ) : (
                                 <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
                             )}
-                            <button
-                                onClick={() => setFilterLavenderOnly(v => !v)}
-                                className={`text-xs rounded px-2 py-1 border ${filterLavenderOnly ? 'bg-purple-100 border-purple-300 text-purple-700' : 'bg-white border-gray-300 text-gray-700'} hover:bg-purple-50`}
-                                title="Toggle to show only weekly (lavender) items"
+                            <select
+                                value={filterRange}
+                                onChange={(e) => setFilterRange(e.target.value)}
+                                className="text-xs border border-gray-300 rounded px-2 py-1 bg-white text-gray-700"
+                                title="Filter by reminder interval"
                             >
-                                {filterLavenderOnly ? 'Showing: Weekly Only' : 'Showing: All'}
-                            </button>
+                                <option value="all">All</option>
+                                <option value="0-7">0-7 days</option>
+                                <option value="8-14">8-14 days</option>
+                                <option value="14-30">14-30 days</option>
+                                <option value="31-60">31-60 days</option>
+                                <option value=">60">&gt; 60 days</option>
+                            </select>
                             <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
                                 <ChevronLeft className="text-gray-600" size={20} />
                             </button>
@@ -473,20 +540,34 @@ export default function App() {
                                 ) : (
                                     <div className="space-y-2">
                                         {reminders.filter((r) => !r.lastUpdated && formatDate(r.plannedDate) === selectedDayStr).map((r) => (
-                                            <div key={`dlg-s-${r.id}`} className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-                                                <div>
-                                                    <div className="text-sm font-semibold text-blue-700 flex items-center gap-2">
-                                                        {r.category}
-                                                        {r.dataPulled && <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100 border border-purple-200 rounded px-1 py-0.5"><Database size={12} /> Data</span>}
+                                            <div key={`dlg-s-${r.id}`} className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <div className="text-sm font-semibold text-blue-700 flex items-center gap-2">
+                                                            {r.category}
+                                                            {r.dataPulled && <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100 border border-purple-200 rounded px-1 py-0.5"><Database size={12} /> Data</span>}
+                                                        </div>
+                                                        <div className="text-xs text-blue-600">Scheduled on {new Date(r.plannedDate).toLocaleDateString()}</div>
                                                     </div>
-                                                    <div className="text-xs text-blue-600">Scheduled on {new Date(r.plannedDate).toLocaleDateString()}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
+                                                        <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
+                                                        <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
+                                                        <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Data</button>
+                                                        <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={() => startEditNotes(r)}>Notes</button>
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
-                                                    <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
-                                                    <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
-                                                    <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Toggle Data</button>
-                                                </div>
+                                                {editingNotesId === r.id ? (
+                                                    <div className="mt-2">
+                                                        <textarea rows={3} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} className="w-full text-xs border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Add notes..." />
+                                                        <div className="mt-2 flex gap-2 justify-end">
+                                                            <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={() => saveNotes(r.id)}>Save</button>
+                                                            <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={cancelNotes}>Cancel</button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    r.notes ? <div className="mt-2 text-xs text-gray-700 whitespace-pre-wrap">{r.notes}</div> : null
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -501,27 +582,41 @@ export default function App() {
                                 ) : (
                                     <div className="space-y-2">
                                         {reminders.filter((r) => formatDate(r.lastUpdated) === selectedDayStr).map((r) => (
-                                            <div key={`dlg-u-${r.id}`} className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                                                <div>
-                                                    <div className="text-sm font-semibold text-green-700 flex items-center gap-2">
-                                                        {r.category}
-                                                        {r.dataPulled && <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100 border border-purple-200 rounded px-1 py-0.5"><Database size={12} /> Data</span>}
+                                            <div key={`dlg-u-${r.id}`} className="bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <div className="text-sm font-semibold text-green-700 flex items-center gap-2">
+                                                            {r.category}
+                                                            {r.dataPulled && <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100 border border-purple-200 rounded px-1 py-0.5"><Database size={12} /> Data</span>}
+                                                        </div>
+                                                        <div className="text-xs text-green-600">Updated on {new Date(r.lastUpdated).toLocaleDateString()}</div>
                                                     </div>
-                                                    <div className="text-xs text-green-600">Updated on {new Date(r.lastUpdated).toLocaleDateString()}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
+                                                        <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
+                                                        <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
+                                                        <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Data</button>
+                                                        <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={() => startEditNotes(r)}>Notes</button>
+                                                        <button
+                                                            className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
+                                                            title="Delete item"
+                                                            onClick={() => handleDeleteReminder(r.id)}
+                                                        >
+                                                            <Trash2 size={14} /> Delete
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
-                                                    <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
-                                                    <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
-                                                    <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Toggle Data</button>
-                                                    <button
-                                                        className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
-                                                        title="Delete item"
-                                                        onClick={() => handleDeleteReminder(r.id)}
-                                                    >
-                                                        <Trash2 size={14} /> Delete
-                                                    </button>
-                                                </div>
+                                                {editingNotesId === r.id ? (
+                                                    <div className="mt-2">
+                                                        <textarea rows={3} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} className="w-full text-xs border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Add notes..." />
+                                                        <div className="mt-2 flex gap-2 justify-end">
+                                                            <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={() => saveNotes(r.id)}>Save</button>
+                                                            <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={cancelNotes}>Cancel</button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    r.notes ? <div className="mt-2 text-xs text-gray-700 whitespace-pre-wrap">{r.notes}</div> : null
+                                                )}
                                             </div>
                                         ))}
                                     </div>
@@ -536,27 +631,41 @@ export default function App() {
                                 ) : (
                                     <div className="space-y-2">
                                         {reminders.filter((r) => formatDate(r.nextUpdate) === selectedDayStr).map((r) => (
-                                            <div key={`dlg-d-${r.id}`} className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                                                <div>
-                                                    <div className="text-sm font-semibold text-red-700 flex items-center gap-2">
-                                                        {r.category}
-                                                        {r.dataPulled && <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100 border border-purple-200 rounded px-1 py-0.5"><Database size={12} /> Data</span>}
+                                            <div key={`dlg-d-${r.id}`} className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <div className="text-sm font-semibold text-red-700 flex items-center gap-2">
+                                                            {r.category}
+                                                            {r.dataPulled && <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100 border border-purple-200 rounded px-1 py-0.5"><Database size={12} /> Data</span>}
+                                                        </div>
+                                                        <div className="text-xs text-red-600">Due on {new Date(r.nextUpdate).toLocaleDateString()}</div>
                                                     </div>
-                                                    <div className="text-xs text-red-600">Due on {new Date(r.nextUpdate).toLocaleDateString()}</div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
+                                                        <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
+                                                        <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
+                                                        <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Data</button>
+                                                        <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={() => startEditNotes(r)}>Notes</button>
+                                                        <button
+                                                            className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
+                                                            title="Delete item"
+                                                            onClick={() => handleDeleteReminder(r.id)}
+                                                        >
+                                                            <Trash2 size={14} /> Delete
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
-                                                    <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
-                                                    <button className="text-xs bg-red-600 text-white rounded px-2 py-1 hover:bg-red-700" onClick={() => setStatusRed(r.id, new Date(selectedDayStr))}>Red</button>
-                                                    <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Toggle Data</button>
-                                                    <button
-                                                        className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
-                                                        title="Delete item"
-                                                        onClick={() => handleDeleteReminder(r.id)}
-                                                    >
-                                                        <Trash2 size={14} /> Delete
-                                                    </button>
-                                                </div>
+                                                {editingNotesId === r.id ? (
+                                                    <div className="mt-2">
+                                                        <textarea rows={3} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} className="w-full text-xs border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Add notes..." />
+                                                        <div className="mt-2 flex gap-2 justify-end">
+                                                            <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={() => saveNotes(r.id)}>Save</button>
+                                                            <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={cancelNotes}>Cancel</button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    r.notes ? <div className="mt-2 text-xs text-gray-700 whitespace-pre-wrap">{r.notes}</div> : null
+                                                )}
                                             </div>
                                         ))}
                                     </div>
