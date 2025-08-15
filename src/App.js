@@ -90,6 +90,7 @@ export default function App() {
                 if (Array.isArray(d.tasks)) setTasks(d.tasks);
                 if (Array.isArray(d.groceries)) setGroceries(d.groceries);
                 if (Array.isArray(d.requests)) setRequests(d.requests);
+                if (Array.isArray(d.meals)) setMeals(d.meals);
                 setUsingBlob(true);
             } catch (_) {
                 setUsingBlob(false);
@@ -148,13 +149,14 @@ export default function App() {
                         tasks,
                         groceries,
                         requests,
+                        meals,
                         savedAt: new Date().toISOString(),
                     }),
                 });
         } catch (_) {}
         }, 400);
         return () => clearTimeout(save);
-    }, [events, tasks, groceries, requests, usingBlob]);
+    }, [events, tasks, groceries, requests, meals, usingBlob]);
 
     // Persist collections
     useEffect(() => { try { localStorage.setItem('events', JSON.stringify(events)); } catch (_) {} }, [events]);
