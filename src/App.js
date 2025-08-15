@@ -153,7 +153,7 @@ export default function App() {
             const newLastUpdated = new Date(completedDate);
             const newNext = new Date(newLastUpdated);
             newNext.setDate(newNext.getDate() + r.reminderDays);
-            // After finishing (red), next cycle becomes planned (blue) and also exists as a blue reminder on day it is due
+            // After finishing (green), next cycle becomes planned (blue)
             const updated = { ...r, plannedDate: newNext.toISOString(), lastUpdated: newLastUpdated.toISOString(), nextUpdate: newNext.toISOString(), history: backlog };
             if (db) {
                 updateDoc(doc(collection(db, 'reminders'), r.id), updated).catch((e) => setRemoteError(e?.message || 'Failed to update on server'));
@@ -267,22 +267,13 @@ export default function App() {
             const updatedToday = reminders.filter(r => formatDate(r.lastUpdated) === dayStr);
             const dueToday = reminders.filter(r => formatDate(r.nextUpdate) === dayStr);
             const scheduledToday = reminders.filter(r => (!r.lastUpdated && formatDate(r.plannedDate) === dayStr));
-            const historyToday = [];
-            reminders.forEach((r) => {
-                const hist = Array.isArray(r.history) ? r.history : [];
-                hist.forEach((h, idx) => {
-                    if (formatDate(h) === dayStr && formatDate(r.lastUpdated) !== dayStr) {
-                        historyToday.push({ key: `h-${r.id}-${idx}`, category: r.category, date: h, isWeekly: r.reminderDays === 7 });
-                    }
-                });
-            });
 
             const updatedTodayFiltered = updatedToday;
             const toDoTodayMap = new Map();
             scheduledToday.forEach((r) => toDoTodayMap.set(r.id, r));
             dueToday.forEach((r) => toDoTodayMap.set(r.id, r));
             const toDoToday = Array.from(toDoTodayMap.values());
-            const historyTodayFiltered = historyToday;
+            
 
             calendarDays.push(
                 <div
@@ -295,7 +286,7 @@ export default function App() {
                         {updatedTodayFiltered.map((r) => (
                             <div
                                 key={`u-${r.id}`}
-                                className="w-full text-[10px] text-white bg-red-500 rounded-lg shadow px-1.5 py-0.5 truncate"
+                                className="w-full text-[10px] text-white bg-green-500 rounded-lg shadow px-1.5 py-0.5 truncate"
                                 title={`'${r.category}' done on ${new Date(r.lastUpdated).toLocaleDateString()}`}
                             >
                                 <div className="flex justify-between items-center">
@@ -331,19 +322,7 @@ export default function App() {
                                 </div>
                             </button>
                         ))}
-                        {historyTodayFiltered.map((h) => (
-                            <div
-                                key={h.key}
-                                className="w-full text-[10px] text-white bg-purple-400 rounded-lg shadow px-1.5 py-0.5 truncate"
-                                title={`'${h.category}' previously updated on ${new Date(h.date).toLocaleDateString()}`}
-                            >
-                                <div className="flex justify-between items-center">
-                                    <span className="font-medium truncate flex items-center gap-1">
-                                        {h.category}
-                                    </span>
-                                </div>
-                            </div>
-                        ))}
+                        
                         {/* Red/due state removed */}
                     </div>
                 </div>
@@ -507,7 +486,7 @@ export default function App() {
 
                             {/* Updated Today (Green) */}
                             <div>
-                                <div className="text-sm font-semibold text-gray-700 mb-2">Updated</div>
+                                <div className="text-sm font-semibold text-gray-700 mb-2">Done</div>
                                 {reminders.filter((r) => formatDate(r.lastUpdated) === selectedDayStr).length === 0 ? (
                                     <p className="text-xs text-gray-500">No items updated this day.</p>
                                 ) : (
@@ -554,54 +533,7 @@ export default function App() {
                                 )}
                             </div>
 
-                            {/* Due Today (Red) */}
-                            <div>
-                                <div className="text-sm font-semibold text-gray-700 mb-2">Due</div>
-                                {reminders.filter((r) => formatDate(r.nextUpdate) === selectedDayStr).length === 0 ? (
-                                    <p className="text-xs text-gray-500">No reminders due this day.</p>
-                                ) : (
-                                    <div className="space-y-2">
-                                        {reminders.filter((r) => formatDate(r.nextUpdate) === selectedDayStr).map((r) => (
-                                            <div key={`dlg-d-${r.id}`} className="bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                                                <div className="flex items-center justify-between">
-                                                    <div>
-                                                        <div className="text-sm font-semibold text-red-700 flex items-center gap-2">
-                                                            {r.category}
-                                                            {r.dataPulled && <span className="inline-flex items-center gap-1 text-[10px] text-purple-700 bg-purple-100 border border-purple-200 rounded px-1 py-0.5"><Database size={12} /> Data</span>}
-                                                        </div>
-                                                        <div className="text-xs text-red-600">Due on {new Date(r.nextUpdate).toLocaleDateString()}</div>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={() => setStatusBlue(r.id, new Date(selectedDayStr))}>Blue</button>
-                                                        <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={() => setStatusGreen(r.id, new Date(selectedDayStr))}>Green</button>
-                                                        
-                                                        <button className="text-xs bg-purple-600 text-white rounded px-2 py-1 hover:bg-purple-700" onClick={() => toggleDataPulled(r.id)}>Data</button>
-                                                        <button className="text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={() => startEditNotes(r)}>Notes</button>
-                                                        <button
-                                                            className="inline-flex items-center gap-1 text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300"
-                                                            title="Delete item"
-                                                            onClick={() => handleDeleteReminder(r.id)}
-                                                        >
-                                                            <Trash2 size={14} /> Delete
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                                {editingNotesId === r.id ? (
-                                                    <div className="mt-2">
-                                                        <textarea rows={3} value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)} className="w-full text-xs border border-gray-300 rounded p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Add notes..." />
-                                                        <div className="mt-2 flex gap-2 justify-end">
-                                                            <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={() => saveNotes(r.id)}>Save</button>
-                                                            <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 hover:bg-gray-300" onClick={cancelNotes}>Cancel</button>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    r.notes ? <div className="mt-2 text-xs text-gray-700 whitespace-pre-wrap">{r.notes}</div> : null
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                            {/* Due section removed */}
 
                             {/* Backlog History (Blue) */}
                             <div>
