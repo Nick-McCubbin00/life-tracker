@@ -156,10 +156,16 @@ export default function App() {
         const trimmed = title.trim();
         if (!trimmed) return;
         const id = generateId();
-        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, done: false, recurrence }]);
+        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, completedDates: [], recurrence }]);
     };
-    const toggleTaskDone = (taskId) => {
-        setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, done: !t.done } : t));
+    const toggleTaskDone = (taskId, dayStr) => {
+        setTasks((prev) => prev.map((t) => {
+            if (t.id !== taskId) return t;
+            const list = Array.isArray(t.completedDates) ? [...t.completedDates] : [];
+            const idx = list.indexOf(dayStr);
+            if (idx >= 0) list.splice(idx, 1); else list.push(dayStr);
+            return { ...t, completedDates: list };
+        }));
     };
     const deleteTask = (taskId) => {
         setTasks((prev) => prev.filter((t) => t.id !== taskId));
@@ -227,6 +233,27 @@ export default function App() {
     };
 
     // Calendar rendering logic
+    const occursOnDay = (task, dayDate) => {
+        // task.date is base date string (YYYY-MM-DD)
+        try {
+            const base = new Date(task.date + 'T00:00:00');
+            const target = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate());
+            if (target < base) return false;
+            const diffDays = Math.floor((target - base) / (1000 * 60 * 60 * 24));
+            const rec = task.recurrence || 'none';
+            if (rec === 'none') return diffDays === 0;
+            if (rec === 'daily') return true;
+            if (rec === 'weekly') return diffDays % 7 === 0;
+            if (rec === 'biweekly') return diffDays % 14 === 0;
+            if (rec === 'monthly') {
+                return target.getDate() === base.getDate();
+            }
+            return false;
+        } catch (_) { return false; }
+    };
+
+    const isTaskDoneOnDate = (task, dayStr) => Array.isArray(task.completedDates) && task.completedDates.includes(dayStr);
+
     const renderCalendar = () => {
         const calendarDays = [];
         const today = new Date();
@@ -245,7 +272,7 @@ export default function App() {
             let dayClasses = "relative p-2 h-36 text-xs border-r border-b border-gray-200 flex flex-col justify-start items-start transition-colors duration-200 overflow-hidden";
             if (dayStr === todayStr) dayClasses += " bg-blue-50";
 
-            const tasksToday = tasks.filter(t => t.date === dayStr);
+            const tasksToday = tasks.filter(t => occursOnDay(t, dayDate));
             const eventsToday = events.filter(e => e.date === dayStr);
             const requestsToday = requests.filter(r => r.status === 'approved' && r.approvedDueDate && formatDate(r.approvedDueDate) === dayStr);
 
@@ -267,7 +294,7 @@ export default function App() {
                         ))}
                         {tasksToday.map((t) => (
                             <div key={`t-${t.id}`} className="w-full text-[10px] bg-blue-500 text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1">
-                                <span className={`truncate ${t.done ? 'line-through' : ''}`}>{t.title}</span>
+                                <span className={`truncate ${isTaskDoneOnDate(t, dayStr) ? 'line-through' : ''}`}>{t.title}</span>
                                 {t.recurrence && t.recurrence !== 'none' && <span className="ml-1 opacity-80">({t.recurrence})</span>}
                                 <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>
                             </div>
@@ -551,12 +578,12 @@ export default function App() {
                                 </div>
                                 <div>
                                     <div className="text-sm font-semibold text-gray-700 mb-2">Tasks</div>
-                                    {tasks.filter(t=>t.date===selectedDayStr).length===0 ? <p className="text-xs text-gray-500">No tasks.</p> : (
+                                    {tasks.filter(t=>occursOnDay(t, new Date(selectedDayStr))).length===0 ? <p className="text-xs text-gray-500">No tasks.</p> : (
                                         <div className="space-y-1">
-                                            {tasks.filter(t=>t.date===selectedDayStr).map((t)=>(
+                                            {tasks.filter(t=>occursOnDay(t, new Date(selectedDayStr))).map((t)=>(
                                                 <div key={`dlg-t-${t.id}`} className="flex items-center gap-2 rounded bg-blue-50 border border-blue-200 px-3 py-2 text-sm">
-                                                    <input type="checkbox" checked={!!t.done} onChange={()=>toggleTaskDone(t.id)} />
-                                                    <span className={t.done ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
+                                                    <input type="checkbox" checked={isTaskDoneOnDate(t, selectedDayStr)} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
+                                                    <span className={isTaskDoneOnDate(t, selectedDayStr) ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
                                                     {t.recurrence && t.recurrence !== 'none' && <span className="text-xs text-gray-500">({t.recurrence})</span>}
                                                     <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
                                                 </div>
