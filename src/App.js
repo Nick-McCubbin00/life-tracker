@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, Database, Info, ListTodo, CalendarDays, Flame, ShoppingCart, Star, Target } from 'lucide-react';
+// Firebase removed for primary persistence; we'll use Vercel Blob via API
 import { db } from './firebase';
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
@@ -29,6 +30,7 @@ export default function App() {
     // weekly upcoming removed
     const [remoteError, setRemoteError] = useState('');
     const [usingRemote, setUsingRemote] = useState(false);
+    const [usingBlob, setUsingBlob] = useState(true);
     // simplified colors: blue/green/red only
     const [infoMessage, setInfoMessage] = useState('');
     const infoTimerRef = useRef(null);
@@ -72,6 +74,25 @@ export default function App() {
                 if (!Number.isNaN(n) && n > 0) setReminderDays(n);
             }
         } catch (_) {}
+
+        // Prefer Blob state when available (no Firebase required)
+        const tryLoadBlob = async () => {
+            try {
+                const resp = await fetch('/api/state');
+                if (!resp.ok) throw new Error('Blob load failed');
+                const json = await resp.json();
+                const d = json?.data || {};
+                if (Array.isArray(d.reminders)) setReminders(d.reminders);
+                if (Array.isArray(d.tasks)) setTasks(d.tasks);
+                if (Array.isArray(d.habits)) setHabits(d.habits);
+                if (Array.isArray(d.groceries)) setGroceries(d.groceries);
+                if (Array.isArray(d.requests)) setRequests(d.requests);
+                setUsingBlob(true);
+            } catch (_) {
+                setUsingBlob(false);
+            }
+        };
+        tryLoadBlob();
 
         if (db) {
             setUsingRemote(true);
@@ -171,6 +192,28 @@ export default function App() {
             } catch (_) {}
         }
     }, []);
+
+    // Persist to Blob (debounced) and localStorage as cache
+    useEffect(() => {
+        const save = setTimeout(async () => {
+            if (!usingBlob) return;
+            try {
+                await fetch('/api/state', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        reminders,
+                        tasks,
+                        habits,
+                        groceries,
+                        requests,
+                        savedAt: new Date().toISOString(),
+                    }),
+                });
+            } catch (_) {}
+        }, 400);
+        return () => clearTimeout(save);
+    }, [reminders, tasks, habits, groceries, requests, usingBlob]);
 
     // Persist reminders to localStorage as cache for offline/fallback
     useEffect(() => {
@@ -651,7 +694,9 @@ export default function App() {
                         <button onClick={() => setActiveTab('groceries')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='groceries' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ShoppingCart size={16} /> Groceries</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
                         <div className="ml-auto flex items-center gap-2">
-                            {usingRemote ? (
+                            {usingBlob ? (
+                                <span className="text-xs text-green-700 bg-green-100 border border-green-200 rounded px-2 py-1">Blob</span>
+                            ) : usingRemote ? (
                                 <span className="text-xs text-green-700 bg-green-100 border border-green-200 rounded px-2 py-1">Synced</span>
                             ) : (
                                 <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
