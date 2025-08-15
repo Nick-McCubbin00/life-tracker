@@ -25,7 +25,7 @@ export default function App() {
     const infoTimerRef = useRef(null);
 
     // Collections
-    const [tasks, setTasks] = useState([]);      // {id, title, date(YYYY-MM-DD), done}
+    const [tasks, setTasks] = useState([]);      // {id, title, date(YYYY-MM-DD), done, recurrence}
     const [events, setEvents] = useState([]);    // {id, title, date(YYYY-MM-DD)}
     const [groceries, setGroceries] = useState([]); // {id, name, quantity, checked}
     const [requests, setRequests] = useState([]);   // {id, title, details, priority, requestedDueDate, approved, approvedDueDate, status}
@@ -33,6 +33,7 @@ export default function App() {
     // Inputs (day modal)
     const [newItemType, setNewItemType] = useState('task'); // 'task' | 'event'
     const [newItemTitle, setNewItemTitle] = useState('');
+    const [newTaskRecurrence, setNewTaskRecurrence] = useState('none'); // none | daily | weekly | biweekly | monthly
     const [newRequestTitle, setNewRequestTitle] = useState('');
     const [newRequestPriority, setNewRequestPriority] = useState('medium');
     const [requestDetails, setRequestDetails] = useState('');
@@ -83,8 +84,8 @@ export default function App() {
                 if (savedGroceries) {
                     const parsed = JSON.parse(savedGroceries);
                     if (Array.isArray(parsed)) setGroceries(parsed);
-                }
-            } catch (_) {}
+            }
+        } catch (_) {}
             try {
                 const savedRequests = localStorage.getItem('requests');
                 if (savedRequests) {
@@ -118,7 +119,7 @@ export default function App() {
                         savedAt: new Date().toISOString(),
                     }),
                 });
-            } catch (_) {}
+        } catch (_) {}
         }, 400);
         return () => clearTimeout(save);
     }, [events, tasks, groceries, requests, usingBlob]);
@@ -151,11 +152,11 @@ export default function App() {
     const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
     // Tasks (as checklist items themselves)
-    const addTaskForDay = (dayStr, title) => {
+    const addTaskForDay = (dayStr, title, recurrence = 'none') => {
         const trimmed = title.trim();
         if (!trimmed) return;
         const id = generateId();
-        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, done: false }]);
+        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, done: false, recurrence }]);
     };
     const toggleTaskDone = (taskId) => {
         setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, done: !t.done } : t));
@@ -265,11 +266,11 @@ export default function App() {
                             </div>
                         ))}
                         {tasksToday.map((t) => (
-                            <label key={`t-${t.id}`} className="w-full text-[10px] bg-blue-500 text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1">
-                                <input type="checkbox" checked={!!t.done} onChange={(e)=>{ e.stopPropagation(); toggleTaskDone(t.id); }} />
+                            <div key={`t-${t.id}`} className="w-full text-[10px] bg-blue-500 text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1">
                                 <span className={`truncate ${t.done ? 'line-through' : ''}`}>{t.title}</span>
+                                {t.recurrence && t.recurrence !== 'none' && <span className="ml-1 opacity-80">({t.recurrence})</span>}
                                 <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>
-                            </label>
+                            </div>
                         ))}
                         {requestsToday.map((r) => (
                             <div key={`rq-${r.id}`} className="w-full text-[10px] rounded-lg shadow px-1.5 py-0.5 truncate" style={{ backgroundColor: '#ffd6e7', color: '#7a2946' }} title={`${r.title} (${r.priority})`}>
@@ -509,14 +510,23 @@ export default function App() {
                             <div className="grid grid-cols-1 gap-3">
                                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                                     <div className="text-xs font-semibold text-gray-700 mb-2">Add to this day</div>
-                                    <div className="flex gap-2 items-center">
+                                    <div className="flex gap-2 items-center flex-wrap">
                                         <select value={newItemType} onChange={(e)=>setNewItemType(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs w-28">
                                             <option value="task">Task</option>
                                             <option value="event">Event</option>
                                         </select>
-                                        <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder={newItemType==='task' ? 'Task title' : 'Event title'} className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm" />
+                                        {newItemType==='task' && (
+                                            <select value={newTaskRecurrence} onChange={(e)=>setNewTaskRecurrence(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs w-28">
+                                                <option value="none">One-time</option>
+                                                <option value="daily">Daily</option>
+                                                <option value="weekly">Weekly</option>
+                                                <option value="biweekly">Biweekly</option>
+                                                <option value="monthly">Monthly</option>
+                                            </select>
+                                        )}
+                                        <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder={newItemType==='task' ? 'Task title' : 'Event title'} className="flex-1 min-w-[160px] px-2 py-1 border border-gray-300 rounded text-sm" />
                                         <button className="text-xs bg-blue-600 text-white rounded px-3 py-1 hover:bg-blue-700" onClick={()=>{
-                                            if (newItemType==='task') { addTaskForDay(selectedDayStr, newItemTitle); }
+                                            if (newItemType==='task') { addTaskForDay(selectedDayStr, newItemTitle, newTaskRecurrence); }
                                             else { addEventForDay(selectedDayStr, newItemTitle); }
                                             setNewItemTitle('');
                                         }}>Add</button>
@@ -544,11 +554,12 @@ export default function App() {
                                     {tasks.filter(t=>t.date===selectedDayStr).length===0 ? <p className="text-xs text-gray-500">No tasks.</p> : (
                                         <div className="space-y-1">
                                             {tasks.filter(t=>t.date===selectedDayStr).map((t)=>(
-                                                <label key={`dlg-t-${t.id}`} className="flex items-center gap-2 rounded bg-blue-50 border border-blue-200 px-3 py-2 text-sm">
+                                                <div key={`dlg-t-${t.id}`} className="flex items-center gap-2 rounded bg-blue-50 border border-blue-200 px-3 py-2 text-sm">
                                                     <input type="checkbox" checked={!!t.done} onChange={()=>toggleTaskDone(t.id)} />
                                                     <span className={t.done ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
+                                                    {t.recurrence && t.recurrence !== 'none' && <span className="text-xs text-gray-500">({t.recurrence})</span>}
                                                     <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
-                                                </label>
+                                                </div>
                                             ))}
                                         </div>
                                     )}
@@ -561,7 +572,6 @@ export default function App() {
                                                 <div key={`dlg-rq-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-sm" style={{ backgroundColor: '#ffd6e7', border: '1px solid #f5a6bd' }}>
                                                     <span className="text-[#7a2946]">{r.title} <span className="capitalize text-xs">({r.priority})</span></span>
                                                     <div className="flex items-center gap-2">
-                                                        {r.status==='pending' && <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={()=>approveRequest(r.id, selectedDayStr)}>Approve</button>}
                                                         {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
                                                         <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>
                                                     </div>
