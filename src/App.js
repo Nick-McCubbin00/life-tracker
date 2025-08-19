@@ -63,6 +63,12 @@ export default function App() {
     // Work tab notes modal
     const [workNotesTaskId, setWorkNotesTaskId] = useState(null);
     const [workNotesDraft, setWorkNotesDraft] = useState('');
+    // Work tab subtask notes modal
+    const [workSubNotesTaskId, setWorkSubNotesTaskId] = useState(null);
+    const [workSubNotesSubId, setWorkSubNotesSubId] = useState(null);
+    const [workSubNotesDraft, setWorkSubNotesDraft] = useState('');
+    // Work tab new subtask input state per task
+    const [newSubTitleByTask, setNewSubTitleByTask] = useState({});
 
     // Meals / Meal Planner
     const [meals, setMeals] = useState([]); // {id,title,recipe,link,ingredients:[{id,name,quantity}]}
@@ -220,7 +226,34 @@ export default function App() {
         const trimmed = title.trim();
         if (!trimmed) return;
         const id = generateId();
-        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, completedDates: [], recurrence, notes: '', type, priority: type==='work' ? 2 : null, estimate: type==='work' ? '' : null }]);
+        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, completedDates: [], recurrence, notes: '', type, priority: type==='work' ? 2 : null, estimate: type==='work' ? '' : null, subtasks: [] }]);
+    };
+    const addSubtask = (taskId, title) => {
+        const trimmed = (title || '').trim();
+        if (!trimmed) return;
+        const subId = generateId();
+        setTasks((prev) => prev.map((t) => {
+            if (t.id !== taskId) return t;
+            const subtasks = Array.isArray(t.subtasks) ? [...t.subtasks] : [];
+            subtasks.push({ id: subId, title: trimmed, notes: '', completedDates: [] });
+            return { ...t, subtasks };
+        }));
+    };
+    const toggleSubtaskDone = (taskId, subId, dayStr) => {
+        setTasks((prev) => prev.map((t) => {
+            if (t.id !== taskId) return t;
+            const subtasks = (t.subtasks || []).map((s) => {
+                if (s.id !== subId) return s;
+                const list = Array.isArray(s.completedDates) ? [...s.completedDates] : [];
+                const idx = list.indexOf(dayStr);
+                if (idx >= 0) list.splice(idx, 1); else list.push(dayStr);
+                return { ...s, completedDates: list };
+            });
+            return { ...t, subtasks };
+        }));
+    };
+    const deleteSubtask = (taskId, subId) => {
+        setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).filter((s) => s.id !== subId) } : t));
     };
     const toggleTaskDone = (taskId, dayStr) => {
         setTasks((prev) => prev.map((t) => {
@@ -875,37 +908,62 @@ export default function App() {
                             const todayStr = formatDate(new Date());
                             const checked = isTaskDoneOnDate(t, todayStr);
                             return (
-                                <div key={`work-${t.id}`} className="rounded px-3 py-2 text-sm flex items-center gap-2" style={{ backgroundColor: '#FEF3C7', border: '1px solid #FCD34D' }}>
-                                    <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, todayStr)} />
-                                    <div className="min-w-0">
-                                        <div className={checked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={t.title}>{t.title}</div>
-                                        {t.notes && <div className="text-xs text-gray-600 truncate" title={t.notes}>{t.notes}</div>}
-                                        {t.recurrence && t.recurrence!=='none' && <div className="text-[11px] text-gray-600">({t.recurrence})</div>}
+                                <div key={`work-${t.id}`} className="rounded px-3 py-2 text-sm" style={{ backgroundColor: '#FEF3C7', border: '1px solid #FCD34D' }}>
+                                    <div className="flex items-center gap-2">
+                                        <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, todayStr)} />
+                                        <div className="min-w-0">
+                                            <div className={checked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={t.title}>{t.title}</div>
+                                            {t.notes && <div className="text-xs text-gray-600 truncate" title={t.notes}>{t.notes}</div>}
+                                            {t.recurrence && t.recurrence!=='none' && <div className="text-[11px] text-gray-600">({t.recurrence})</div>}
+                                        </div>
+                                        <div className="ml-auto flex items-center gap-2">
+                                            <button className="text-gray-700 hover:text-gray-900" title="Open notes" onClick={()=>{ setWorkNotesTaskId(t.id); setWorkNotesDraft(t.notes||''); }}>
+                                                <Clipboard size={16} />
+                                            </button>
+                                            <div className="flex items-center gap-1 text-xs">
+                                                <span className="text-gray-600">P</span>
+                                                <select value={t.priority ?? 3} onChange={(e)=> setTasks((prev)=> prev.map(x=> x.id===t.id ? { ...x, priority: parseInt(e.target.value,10) } : x))} className="px-1 py-0.5 border border-amber-300 rounded">
+                                                    <option value={1}>1</option>
+                                                    <option value={2}>2</option>
+                                                    <option value={3}>3</option>
+                                                </select>
+                                            </div>
+                                            <div className="flex items-center gap-1 text-xs">
+                                                <span className="text-gray-600">Est</span>
+                                                <select value={t.estimate || ''} onChange={(e)=> setTasks((prev)=> prev.map(x=> x.id===t.id ? { ...x, estimate: e.target.value } : x))} className="px-1 py-0.5 border border-amber-300 rounded">
+                                                    <option value="">—</option>
+                                                    <option value="30m">30m</option>
+                                                    <option value="1h">1h</option>
+                                                    <option value="90m">90m</option>
+                                                    <option value="2h">2h</option>
+                                                    <option value="3h">3h</option>
+                                                </select>
+                                            </div>
+                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
+                                        </div>
                                     </div>
-                                    <div className="ml-auto flex items-center gap-2">
-                                        <button className="text-gray-700 hover:text-gray-900" title="Open notes" onClick={()=>{ setWorkNotesTaskId(t.id); setWorkNotesDraft(t.notes||''); }}>
-                                            <Clipboard size={16} />
-                                        </button>
-                                        <div className="flex items-center gap-1 text-xs">
-                                            <span className="text-gray-600">P</span>
-                                            <select value={t.priority ?? 3} onChange={(e)=> setTasks((prev)=> prev.map(x=> x.id===t.id ? { ...x, priority: parseInt(e.target.value,10) } : x))} className="px-1 py-0.5 border border-amber-300 rounded">
-                                                <option value={1}>1</option>
-                                                <option value={2}>2</option>
-                                                <option value={3}>3</option>
-                                            </select>
+                                    {/* Subtasks */}
+                                    <div className="mt-2 space-y-2">
+                                        {(t.subtasks||[]).map((s)=>{
+                                            const subChecked = Array.isArray(s.completedDates) && s.completedDates.includes(todayStr);
+                                            return (
+                                                <div key={s.id} className="flex items-start gap-2 text-xs bg-white/60 rounded border border-amber-200 px-2 py-1">
+                                                    <input type="checkbox" className="mt-0.5" checked={subChecked} onChange={()=>toggleSubtaskDone(t.id, s.id, todayStr)} />
+                                                    <div className="min-w-0">
+                                                        <div className={subChecked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={s.title}>{s.title}</div>
+                                                        {s.notes && <div className="text-[11px] text-gray-600 truncate" title={s.notes}>{s.notes}</div>}
+                                                    </div>
+                                                    <div className="ml-auto flex items-center gap-2">
+                                                        <button className="text-gray-700 hover:text-gray-900" title="Open subtask notes" onClick={()=>{ setWorkSubNotesTaskId(t.id); setWorkSubNotesSubId(s.id); setWorkSubNotesDraft(s.notes||''); }}> <Clipboard size={14} /> </button>
+                                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteSubtask(t.id, s.id)}><Trash2 size={12}/></button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        <div className="flex items-center gap-2 text-xs">
+                                            <input value={newSubTitleByTask[t.id]||''} onChange={(e)=> setNewSubTitleByTask((prev)=> ({...prev, [t.id]: e.target.value}))} placeholder="Add subtask" className="flex-1 px-2 py-1 border border-amber-300 rounded" />
+                                            <button className="bg-amber-600 text-white rounded px-2 py-1" onClick={()=>{ addSubtask(t.id, newSubTitleByTask[t.id]||''); setNewSubTitleByTask((prev)=> ({...prev, [t.id]: ''})); }}>Add</button>
                                         </div>
-                                        <div className="flex items-center gap-1 text-xs">
-                                            <span className="text-gray-600">Est</span>
-                                            <select value={t.estimate || ''} onChange={(e)=> setTasks((prev)=> prev.map(x=> x.id===t.id ? { ...x, estimate: e.target.value } : x))} className="px-1 py-0.5 border border-amber-300 rounded">
-                                                <option value="">—</option>
-                                                <option value="30m">30m</option>
-                                                <option value="1h">1h</option>
-                                                <option value="90m">90m</option>
-                                                <option value="2h">2h</option>
-                                                <option value="3h">3h</option>
-                                            </select>
-                                        </div>
-                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
                                     </div>
                                 </div>
                             );
@@ -930,6 +988,32 @@ export default function App() {
                                     const id = workNotesTaskId;
                                     setTasks((prev)=> prev.map(x=> x.id===id ? { ...x, notes: workNotesDraft } : x));
                                     setWorkNotesTaskId(null); setWorkNotesDraft('');
+                                }}>Save</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Work Subtask Notes Modal */}
+                {workSubNotesTaskId && workSubNotesSubId && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center">
+                        <div className="absolute inset-0 bg-black/30" onClick={()=>{ setWorkSubNotesTaskId(null); setWorkSubNotesSubId(null); setWorkSubNotesDraft(''); }} />
+                        <div className="relative bg-white w-full max-w-md mx-4 rounded-2xl shadow-xl border border-gray-200 p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="text-sm font-semibold text-gray-800">Subtask Notes</div>
+                                <button className="p-1 rounded hover:bg-gray-100" onClick={()=>{ setWorkSubNotesTaskId(null); setWorkSubNotesSubId(null); setWorkSubNotesDraft(''); }}><X size={16} /></button>
+                            </div>
+                            <textarea value={workSubNotesDraft} onChange={(e)=>setWorkSubNotesDraft(e.target.value)} rows={8} className="w-full px-3 py-2 border border-gray-300 rounded text-sm" placeholder="Add notes..." />
+                            <div className="mt-3 flex justify-end gap-2">
+                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-3 py-1" onClick={()=>{ setWorkSubNotesTaskId(null); setWorkSubNotesSubId(null); setWorkSubNotesDraft(''); }}>Cancel</button>
+                                <button className="text-xs bg-blue-600 text-white rounded px-3 py-1" onClick={()=>{
+                                    const tId = workSubNotesTaskId; const sId = workSubNotesSubId;
+                                    setTasks((prev)=> prev.map(t=>{
+                                        if (t.id!==tId) return t;
+                                        const subtasks = (t.subtasks||[]).map(s=> s.id===sId ? { ...s, notes: workSubNotesDraft } : s);
+                                        return { ...t, subtasks };
+                                    }));
+                                    setWorkSubNotesTaskId(null); setWorkSubNotesSubId(null); setWorkSubNotesDraft('');
                                 }}>Save</button>
                             </div>
                         </div>
