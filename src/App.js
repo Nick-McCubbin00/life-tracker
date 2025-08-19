@@ -78,63 +78,83 @@ export default function App() {
     const [isBackingUp, setIsBackingUp] = useState(false);
     const [isRestoring, setIsRestoring] = useState(false);
 
-    // Load state from Blob first, fallback to localStorage
+    // Load state from Blob first (awaited), fallback to localStorage if unavailable or empty
     useEffect(() => {
-        // Prefer Blob state when available (no Firebase required)
-        const tryLoadBlob = async () => {
+        (async () => {
+            const loadFromLocal = () => {
+                try {
+                    const savedTasks = localStorage.getItem('tasks');
+                    if (savedTasks) {
+                        const parsed = JSON.parse(savedTasks);
+                        if (Array.isArray(parsed)) setTasks(parsed);
+                    }
+                } catch (_) {}
+                try {
+                    const savedGroceries = localStorage.getItem('groceries');
+                    if (savedGroceries) {
+                        const parsed = JSON.parse(savedGroceries);
+                        if (Array.isArray(parsed)) setGroceries(parsed);
+                    }
+                } catch (_) {}
+                try {
+                    const savedRequests = localStorage.getItem('requests');
+                    if (savedRequests) {
+                        const parsed = JSON.parse(savedRequests);
+                        if (Array.isArray(parsed)) setRequests(parsed);
+                    }
+                } catch (_) {}
+                try {
+                    const savedEvents = localStorage.getItem('events');
+                    if (savedEvents) {
+                        const parsed = JSON.parse(savedEvents);
+                        if (Array.isArray(parsed)) setEvents(parsed);
+                    }
+                } catch (_) {}
+                try {
+                    const savedMeals = localStorage.getItem('meals');
+                    if (savedMeals) {
+                        const parsed = JSON.parse(savedMeals);
+                        if (Array.isArray(parsed)) setMeals(parsed);
+                    }
+                } catch (_) {}
+            };
+
             try {
                 const resp = await fetch('/api/state');
-                if (!resp.ok) throw new Error('Blob load failed');
-                const json = await resp.json();
-                const d = json?.data || {};
-                if (Array.isArray(d.events)) setEvents(d.events);
-                if (Array.isArray(d.tasks)) setTasks(d.tasks);
-                if (Array.isArray(d.groceries)) setGroceries(d.groceries);
-                if (Array.isArray(d.requests)) setRequests(d.requests);
-                if (Array.isArray(d.meals)) setMeals(d.meals);
-                setUsingBlob(true);
+                if (resp.ok) {
+                    const json = await resp.json();
+                    const d = json?.data || {};
+                    // Enable Blob persistence
+                    setUsingBlob(true);
+
+                    const arrays = {
+                        events: Array.isArray(d.events) ? d.events : undefined,
+                        tasks: Array.isArray(d.tasks) ? d.tasks : undefined,
+                        groceries: Array.isArray(d.groceries) ? d.groceries : undefined,
+                        requests: Array.isArray(d.requests) ? d.requests : undefined,
+                        meals: Array.isArray(d.meals) ? d.meals : undefined,
+                    };
+                    const hasAnyItems = Object.values(arrays).some((v) => Array.isArray(v) && v.length > 0);
+
+                    if (arrays.events) setEvents(arrays.events);
+                    if (arrays.tasks) setTasks(arrays.tasks);
+                    if (arrays.groceries) setGroceries(arrays.groceries);
+                    if (arrays.requests) setRequests(arrays.requests);
+                    if (arrays.meals) setMeals(arrays.meals);
+
+                    // If Blob is empty, seed from localStorage so the user retains their data and it can sync next
+                    if (!hasAnyItems) {
+                        loadFromLocal();
+                    }
+                } else {
+                    setUsingBlob(false);
+                    loadFromLocal();
+                }
             } catch (_) {
                 setUsingBlob(false);
+                loadFromLocal();
             }
-        };
-        tryLoadBlob();
-        {
-            try {
-                const savedTasks = localStorage.getItem('tasks');
-                if (savedTasks) {
-                    const parsed = JSON.parse(savedTasks);
-                    if (Array.isArray(parsed)) setTasks(parsed);
-                }
-            } catch (_) {}
-            try {
-                const savedGroceries = localStorage.getItem('groceries');
-                if (savedGroceries) {
-                    const parsed = JSON.parse(savedGroceries);
-                    if (Array.isArray(parsed)) setGroceries(parsed);
-                }
-            } catch (_) {}
-            try {
-                const savedRequests = localStorage.getItem('requests');
-                if (savedRequests) {
-                    const parsed = JSON.parse(savedRequests);
-                    if (Array.isArray(parsed)) setRequests(parsed);
-            }
-        } catch (_) {}
-            try {
-                const savedEvents = localStorage.getItem('events');
-                if (savedEvents) {
-                    const parsed = JSON.parse(savedEvents);
-                    if (Array.isArray(parsed)) setEvents(parsed);
-                }
-            } catch (_) {}
-            try {
-                const savedMeals = localStorage.getItem('meals');
-                if (savedMeals) {
-                    const parsed = JSON.parse(savedMeals);
-                    if (Array.isArray(parsed)) setMeals(parsed);
-                }
-            } catch (_) {}
-        }
+        })();
     }, []);
 
     // Persist to Blob (debounced) and localStorage as cache
