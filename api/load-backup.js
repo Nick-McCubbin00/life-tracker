@@ -1,4 +1,6 @@
-const { list } = require('@vercel/blob');
+async function getBlobSdk() {
+  return await import('@vercel/blob');
+}
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -7,6 +9,7 @@ module.exports = async function handler(req, res) {
   }
   const token = process.env.BLOB_READ_WRITE_TOKEN || undefined;
   try {
+    const { list } = await getBlobSdk();
     const { blobs } = await list({ prefix: 'backup-', token });
     const sorted = (blobs || []).sort((a, b) => b.uploadedAt - a.uploadedAt);
     const latest = sorted[0];

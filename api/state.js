@@ -1,4 +1,7 @@
-const { list, put } = require('@vercel/blob');
+async function getBlobSdk() {
+  // @vercel/blob is ESM-only; use dynamic import for compatibility
+  return await import('@vercel/blob');
+}
 
 async function readRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -33,6 +36,7 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'GET') {
     try {
+      const { list } = await getBlobSdk();
       const { blobs } = await list({ prefix: 'state.json', token });
       const blob = (blobs || []).find((b) => b.pathname === 'state.json') || (blobs || [])[0];
       if (!blob) {
@@ -48,6 +52,7 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'POST') {
     try {
+      const { put } = await getBlobSdk();
       const body = await parseJsonBody(req);
       const payload = body && typeof body === 'object' ? body : {};
       const toStore = JSON.stringify(payload);

@@ -1,4 +1,6 @@
-const { put } = require('@vercel/blob');
+async function getBlobSdk() {
+  return await import('@vercel/blob');
+}
 
 async function readRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -32,6 +34,7 @@ module.exports = async function handler(req, res) {
     const body = await parseJsonBody(req);
     const data = body?.data || {};
     const key = `backup-${Date.now()}.json`;
+    const { put } = await getBlobSdk();
     await put(key, JSON.stringify(data), {
       access: 'public',
       contentType: 'application/json',
