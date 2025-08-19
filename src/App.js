@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, CalendarDays, ShoppingCart, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, CalendarDays, ShoppingCart, Star, Briefcase } from 'lucide-react';
 
 // Helper to format date to 'YYYY-MM-DD'
 const formatDate = (date) => {
@@ -34,6 +34,7 @@ export default function App() {
     const [newItemType, setNewItemType] = useState('task'); // 'task' | 'event'
     const [newItemTitle, setNewItemTitle] = useState('');
     const [newTaskRecurrence, setNewTaskRecurrence] = useState('none'); // none | daily | weekly | biweekly | monthly
+    const [newTaskType, setNewTaskType] = useState('personal'); // personal | work
     const [newRequestTitle, setNewRequestTitle] = useState('');
     const [newRequestPriority, setNewRequestPriority] = useState('medium');
     const [requestDetails, setRequestDetails] = useState('');
@@ -196,11 +197,11 @@ export default function App() {
     };
 
     // Tasks (as checklist items themselves)
-    const addTaskForDay = (dayStr, title, recurrence = 'none') => {
+    const addTaskForDay = (dayStr, title, recurrence = 'none', type = 'personal') => {
         const trimmed = title.trim();
         if (!trimmed) return;
         const id = generateId();
-        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, completedDates: [], recurrence, notes: '' }]);
+        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, completedDates: [], recurrence, notes: '', type }]);
     };
     const toggleTaskDone = (taskId, dayStr) => {
         setTasks((prev) => prev.map((t) => {
@@ -340,7 +341,7 @@ export default function App() {
                             </div>
                         ))}
                         {tasksToday.map((t) => (
-                            <div key={`t-${t.id}`} className="w-full text-[10px] bg-blue-500 text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1">
+                            <div key={`t-${t.id}`} className="w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1" style={{ backgroundColor: (t.type||'personal')==='work' ? '#f59e0b' : '#3b82f6' }}>
                                 <span className={`truncate ${isTaskDoneOnDate(t, dayStr) ? 'line-through' : ''}`}>{t.title}</span>
                                 {t.recurrence && t.recurrence !== 'none' && <span className="ml-1 opacity-80">({t.recurrence})</span>}
                                 <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>
@@ -380,6 +381,7 @@ export default function App() {
                         <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
                         <button onClick={() => setActiveTab('groceries')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='groceries' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ShoppingCart size={16} /> Groceries</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
+                        <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Work</button>
                         <div className="ml-auto flex items-center gap-2">
                             {usingBlob ? (
                                 <span className="text-xs text-green-700 bg-green-100 border border-green-200 rounded px-2 py-1">Blob</span>
@@ -520,21 +522,28 @@ export default function App() {
                                         <option value="event">Event</option>
                                     </select>
                                     {newItemType==='task' && (
-                                        <select value={newTaskRecurrence} onChange={(e)=>setNewTaskRecurrence(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
-                                            <option value="none">One-time</option>
-                                            <option value="daily">Daily</option>
-                                            <option value="weekly">Weekly</option>
-                                            <option value="biweekly">Biweekly</option>
-                                            <option value="monthly">Monthly</option>
-                                        </select>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <select value={newTaskRecurrence} onChange={(e)=>setNewTaskRecurrence(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                                                <option value="none">One-time</option>
+                                                <option value="daily">Daily</option>
+                                                <option value="weekly">Weekly</option>
+                                                <option value="biweekly">Biweekly</option>
+                                                <option value="monthly">Monthly</option>
+                                            </select>
+                                            <select value={newTaskType} onChange={(e)=>setNewTaskType(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                                                <option value="personal">Personal</option>
+                                                <option value="work">Work</option>
+                                            </select>
+                                        </div>
                                     )}
                                     <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder={newItemType==='task'?"Add task":"Add event"} className="md:col-span-3 px-3 py-2 border border-gray-300 rounded-lg" />
                                     <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
                                         const t = (newItemTitle||'').trim(); if (!t) return;
-                                        if (newItemType==='task') { addTaskForDay(selectedDayStr, t, newTaskRecurrence); }
+                                        if (newItemType==='task') { addTaskForDay(selectedDayStr, t, newTaskRecurrence, newTaskType); }
                                         else { addEventForDay(selectedDayStr, t); }
                                         setNewItemTitle('');
                                         setNewTaskRecurrence('none');
+                                        setNewTaskType('personal');
                                     }}>Add</button>
                                 </div>
                                 </div>
@@ -546,22 +555,25 @@ export default function App() {
                                         const checked = isTaskDoneOnDate(t, selectedDayStr);
                                         const isEditing = editingTaskId === t.id;
                                         return (
-                                            <div key={t.id} className="rounded bg-blue-50 border border-blue-200 p-2 text-xs">
+                                            <div key={t.id} className="rounded p-2 text-xs" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FEF3C7' : '#EFF6FF', border: '1px solid ' + ((t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE') }}>
                                                 {!isEditing ? (
                                                     <div className="flex items-start gap-2">
                                                         <input type="checkbox" className="mt-0.5" checked={checked} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
                                                         <div className="min-w-0">
                                                             <div className={checked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={t.title}>{t.title}</div>
                                                             {t.notes && <div className="text-[11px] text-gray-600 truncate" title={t.notes}>{t.notes}</div>}
-                                                            {t.recurrence && t.recurrence!=='none' && <div className="text-[10px] text-blue-700">({t.recurrence})</div>}
-                                    </div>
+                                                            <div className="flex items-center gap-2 text-[10px]">
+                                                                {t.recurrence && t.recurrence!=='none' && <span className="text-blue-700">({t.recurrence})</span>}
+                                                                <span className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FDE68A' : '#DBEAFE', borderColor: (t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE', color: '#374151' }}>{(t.type||'personal')==='work' ? 'Work' : 'Personal'}</span>
+                                                            </div>
+                                                        </div>
                                                         <div className="ml-auto flex items-center gap-2">
                                                             <button className="text-gray-600 hover:text-gray-900" onClick={()=>{ setEditingTaskId(t.id); setEditTaskTitle(t.title); setEditTaskNotes(t.notes||''); }} title="Edit">✎</button>
                                                             <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)} title="Delete"><Trash2 size={12}/></button>
-                                </div>
-                            </div>
-                                ) : (
-                                    <div className="space-y-2">
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-2">
                                                         <input value={editTaskTitle} onChange={(e)=>setEditTaskTitle(e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Task title" />
                                                         <textarea value={editTaskNotes} onChange={(e)=>setEditTaskNotes(e.target.value)} rows={2} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Notes (optional)" />
                                                         <div className="flex items-center gap-2">
@@ -573,6 +585,11 @@ export default function App() {
                                                                 <option value="biweekly">Biweekly</option>
                                                                 <option value="monthly">Monthly</option>
                                                             </select>
+                                                            <label className="text-[11px] text-gray-700 ml-2">Type</label>
+                                                            <select value={t.type||'personal'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, type: e.target.value } : x))} className="px-2 py-1 border border-blue-200 rounded text-xs">
+                                                                <option value="personal">Personal</option>
+                                                                <option value="work">Work</option>
+                                                            </select>
                                                             <div className="ml-auto flex items-center gap-2">
                                                                 <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>{
                                                                     const title = editTaskTitle.trim(); if (!title) return;
@@ -580,9 +597,9 @@ export default function App() {
                                                                     setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes('');
                                                                 }}>Save</button>
                                                                 <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes(''); }}>Cancel</button>
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    </div>
-                                                </div>
                                                 )}
                                             </div>
                                         );
@@ -816,6 +833,34 @@ export default function App() {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                </div>
+                )}
+
+                {/* Work Tab */}
+                {activeTab === 'work' && (
+                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-4">
+                    <div className="flex items-center gap-2">
+                        <Briefcase size={18} />
+                        <div className="text-xl font-bold text-gray-800">Work — Today</div>
+                        <div className="ml-auto text-xs text-gray-500">{formatDate(new Date())}</div>
+                    </div>
+                    <div className="space-y-2">
+                        {tasks.filter(t=> (t.type||'personal')==='work' && occursOnDay(t, new Date()) ).length===0 && (
+                            <div className="text-xs text-gray-500">No work tasks for today.</div>
+                        )}
+                        {tasks.filter(t=> (t.type||'personal')==='work' && occursOnDay(t, new Date()) ).map((t)=>{
+                            const todayStr = formatDate(new Date());
+                            const checked = isTaskDoneOnDate(t, todayStr);
+                            return (
+                                <label key={`work-${t.id}`} className="flex items-center gap-2 rounded px-3 py-2 text-sm" style={{ backgroundColor: '#FEF3C7', border: '1px solid #FCD34D' }}>
+                                    <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, todayStr)} />
+                                    <span className={checked ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
+                                    {t.recurrence && t.recurrence!=='none' && <span className="text-[11px] text-gray-600 ml-1">({t.recurrence})</span>}
+                                    <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
+                                </label>
+                            );
+                        })}
                     </div>
                 </div>
                 )}
