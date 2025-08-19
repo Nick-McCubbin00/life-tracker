@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, CalendarDays, ShoppingCart, Star, Briefcase } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, CalendarDays, ShoppingCart, Star, Briefcase, Clipboard } from 'lucide-react';
 
 // Helper to format date to 'YYYY-MM-DD'
 const formatDate = (date) => {
@@ -59,6 +59,10 @@ export default function App() {
     const [editingEventId, setEditingEventId] = useState(null);
     const [editEventTitle, setEditEventTitle] = useState('');
     const [editEventNotes, setEditEventNotes] = useState('');
+
+    // Work tab notes modal
+    const [workNotesTaskId, setWorkNotesTaskId] = useState(null);
+    const [workNotesDraft, setWorkNotesDraft] = useState('');
 
     // Meals / Meal Planner
     const [meals, setMeals] = useState([]); // {id,title,recipe,link,ingredients:[{id,name,quantity}]}
@@ -884,6 +888,9 @@ export default function App() {
                                         {t.recurrence && t.recurrence!=='none' && <div className="text-[11px] text-gray-600">({t.recurrence})</div>}
                                     </div>
                                     <div className="ml-auto flex items-center gap-2">
+                                        <button className="text-gray-700 hover:text-gray-900" title="Open notes" onClick={()=>{ setWorkNotesTaskId(t.id); setWorkNotesDraft(t.notes||''); }}>
+                                            <Clipboard size={16} />
+                                        </button>
                                         <div className="flex items-center gap-1 text-xs">
                                             <span className="text-gray-600">P</span>
                                             <select value={t.priority ?? 3} onChange={(e)=> setTasks((prev)=> prev.map(x=> x.id===t.id ? { ...x, priority: parseInt(e.target.value,10) } : x))} className="px-1 py-0.5 border border-amber-300 rounded">
@@ -910,6 +917,28 @@ export default function App() {
                         })}
                     </div>
                 </div>
+                )}
+
+                {/* Work Task Notes Modal */}
+                {workNotesTaskId && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center">
+                        <div className="absolute inset-0 bg-black/30" onClick={()=>{ setWorkNotesTaskId(null); setWorkNotesDraft(''); }} />
+                        <div className="relative bg-white w-full max-w-md mx-4 rounded-2xl shadow-xl border border-gray-200 p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="text-sm font-semibold text-gray-800">Task Notes</div>
+                                <button className="p-1 rounded hover:bg-gray-100" onClick={()=>{ setWorkNotesTaskId(null); setWorkNotesDraft(''); }}><X size={16} /></button>
+                            </div>
+                            <textarea value={workNotesDraft} onChange={(e)=>setWorkNotesDraft(e.target.value)} rows={8} className="w-full px-3 py-2 border border-gray-300 rounded text-sm" placeholder="Add notes..." />
+                            <div className="mt-3 flex justify-end gap-2">
+                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-3 py-1" onClick={()=>{ setWorkNotesTaskId(null); setWorkNotesDraft(''); }}>Cancel</button>
+                                <button className="text-xs bg-blue-600 text-white rounded px-3 py-1" onClick={()=>{
+                                    const id = workNotesTaskId;
+                                    setTasks((prev)=> prev.map(x=> x.id===id ? { ...x, notes: workNotesDraft } : x));
+                                    setWorkNotesTaskId(null); setWorkNotesDraft('');
+                                }}>Save</button>
+                            </div>
+                        </div>
+                    </div>
                 )}
 
             </div>
