@@ -878,8 +878,11 @@ export default function App() {
                             return (
                                 <div key={`work-${t.id}`} className="rounded px-3 py-2 text-sm flex items-center gap-2" style={{ backgroundColor: '#FEF3C7', border: '1px solid #FCD34D' }}>
                                     <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, todayStr)} />
-                                    <span className={checked ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
-                                    {t.recurrence && t.recurrence!=='none' && <span className="text-[11px] text-gray-600 ml-1">({t.recurrence})</span>}
+                                    <div className="min-w-0">
+                                        <div className={checked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={t.title}>{t.title}</div>
+                                        {t.notes && <div className="text-xs text-gray-600 truncate" title={t.notes}>{t.notes}</div>}
+                                        {t.recurrence && t.recurrence!=='none' && <div className="text-[11px] text-gray-600">({t.recurrence})</div>}
+                                    </div>
                                     <div className="ml-auto flex items-center gap-2">
                                         <div className="flex items-center gap-1 text-xs">
                                             <span className="text-gray-600">P</span>
