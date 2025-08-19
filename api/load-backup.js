@@ -1,3 +1,24 @@
+const { list } = require('@vercel/blob');
+
+module.exports = async function handler(req, res) {
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).end('Method Not Allowed');
+  }
+  const token = process.env.BLOB_READ_WRITE_TOKEN || undefined;
+  try {
+    const { blobs } = await list({ prefix: 'backup-', token });
+    const sorted = (blobs || []).sort((a, b) => b.uploadedAt - a.uploadedAt);
+    const latest = sorted[0];
+    if (!latest) return res.status(200).json({ data: {} });
+    const resp = await fetch(latest.url);
+    const json = await resp.json().catch(() => ({}));
+    return res.status(200).json({ data: json || {} });
+  } catch (e) {
+    return res.status(200).json({ data: {} });
+  }
+};
+
 // Vercel Serverless Function to list and load the most recent backup
 // Returns the JSON content of the latest blob under backups/
 
