@@ -201,7 +201,7 @@ export default function App() {
         const trimmed = title.trim();
         if (!trimmed) return;
         const id = generateId();
-        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, completedDates: [], recurrence, notes: '', type }]);
+        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, completedDates: [], recurrence, notes: '', type, priority: type==='work' ? 2 : null, estimate: type==='work' ? '' : null }]);
     };
     const toggleTaskDone = (taskId, dayStr) => {
         setTasks((prev) => prev.map((t) => {
@@ -849,16 +849,40 @@ export default function App() {
                         {tasks.filter(t=> (t.type||'personal')==='work' && occursOnDay(t, new Date()) ).length===0 && (
                             <div className="text-xs text-gray-500">No work tasks for today.</div>
                         )}
-                        {tasks.filter(t=> (t.type||'personal')==='work' && occursOnDay(t, new Date()) ).map((t)=>{
+                        {tasks
+                            .filter(t=> (t.type||'personal')==='work' && occursOnDay(t, new Date()))
+                            .sort((a,b)=> (a.priority||3) - (b.priority||3))
+                            .map((t)=>{
                             const todayStr = formatDate(new Date());
                             const checked = isTaskDoneOnDate(t, todayStr);
                             return (
-                                <label key={`work-${t.id}`} className="flex items-center gap-2 rounded px-3 py-2 text-sm" style={{ backgroundColor: '#FEF3C7', border: '1px solid #FCD34D' }}>
+                                <div key={`work-${t.id}`} className="rounded px-3 py-2 text-sm flex items-center gap-2" style={{ backgroundColor: '#FEF3C7', border: '1px solid #FCD34D' }}>
                                     <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, todayStr)} />
                                     <span className={checked ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
                                     {t.recurrence && t.recurrence!=='none' && <span className="text-[11px] text-gray-600 ml-1">({t.recurrence})</span>}
-                                    <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
-                                </label>
+                                    <div className="ml-auto flex items-center gap-2">
+                                        <div className="flex items-center gap-1 text-xs">
+                                            <span className="text-gray-600">P</span>
+                                            <select value={t.priority ?? 3} onChange={(e)=> setTasks((prev)=> prev.map(x=> x.id===t.id ? { ...x, priority: parseInt(e.target.value,10) } : x))} className="px-1 py-0.5 border border-amber-300 rounded">
+                                                <option value={1}>1</option>
+                                                <option value={2}>2</option>
+                                                <option value={3}>3</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-xs">
+                                            <span className="text-gray-600">Est</span>
+                                            <select value={t.estimate || ''} onChange={(e)=> setTasks((prev)=> prev.map(x=> x.id===t.id ? { ...x, estimate: e.target.value } : x))} className="px-1 py-0.5 border border-amber-300 rounded">
+                                                <option value="">—</option>
+                                                <option value="30m">30m</option>
+                                                <option value="1h">1h</option>
+                                                <option value="90m">90m</option>
+                                                <option value="2h">2h</option>
+                                                <option value="3h">3h</option>
+                                            </select>
+                                        </div>
+                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
+                                    </div>
+                                </div>
                             );
                         })}
                     </div>
