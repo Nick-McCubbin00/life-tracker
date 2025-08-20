@@ -519,9 +519,9 @@ export default function App() {
                 )}
                 {currentUser && (
                 <>
-                {/* Top banner with mode toggle (blue box) */}
+                {/* Top banner with mode toggle (centered) */}
                 <div className="flex items-center justify-center">
-                    <div className="w-full max-w-xl h-16 border-2 border-blue-400 rounded-xl bg-blue-50 flex items-center justify-center gap-2">
+                    <div className="flex items-center justify-center gap-2">
                         <button onClick={()=> setMode('work')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='work' ? 'bg-amber-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Work</button>
                         <button onClick={()=> setMode('home')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='home' ? 'bg-blue-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Home</button>
                     </div>
@@ -548,6 +548,48 @@ export default function App() {
                             ) : (
                                 <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
                             )}
+                            <button
+                                disabled={isBackingUp}
+                                onClick={async ()=>{
+                                    try {
+                                        setIsBackingUp(true);
+                                        const payload = { events, tasks, groceries, requests, meals, workFiles, exportedAt: new Date().toISOString() };
+                                        const resp = await fetch('/api/save-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: payload })});
+                                        const json = await resp.json();
+                                        if (!resp.ok) throw new Error(json?.error || 'Backup failed');
+                                        setInfoMessage('Backup saved');
+                                    } catch (e) {
+                                        setRemoteError(e?.message || 'Backup failed');
+                                    } finally {
+                                        setIsBackingUp(false);
+                                    }
+                                }}
+                                className={`text-xs rounded px-2 py-1 ${isBackingUp ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
+                            >{isBackingUp ? 'Backing…' : 'Backup'}</button>
+                            <button
+                                disabled={isRestoring}
+                                onClick={async ()=>{
+                                    try {
+                                        setIsRestoring(true);
+                                        const resp = await fetch('/api/load-backup');
+                                        const json = await resp.json();
+                                        if (!resp.ok) throw new Error(json?.error || 'Restore failed');
+                                        const d = json?.data || {};
+                                        if (Array.isArray(d.events)) setEvents(d.events);
+                                        if (Array.isArray(d.tasks)) setTasks(d.tasks);
+                                        if (Array.isArray(d.groceries)) setGroceries(d.groceries);
+                                        if (Array.isArray(d.requests)) setRequests(d.requests);
+                                        if (Array.isArray(d.meals)) setMeals(d.meals);
+                                        if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
+                                        setInfoMessage('Backup restored');
+                                    } catch (e) {
+                                        setRemoteError(e?.message || 'Restore failed');
+                                    } finally {
+                                        setIsRestoring(false);
+                                    }
+                                }}
+                                className={`text-xs rounded px-2 py-1 ${isRestoring ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
+                            >{isRestoring ? 'Restoring…' : 'Restore'}</button>
                         </div>
                     </div>
                 </div>
@@ -572,6 +614,48 @@ export default function App() {
                             ) : (
                                 <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
                             )}
+                            <button
+                                disabled={isBackingUp}
+                                onClick={async ()=>{
+                                    try {
+                                        setIsBackingUp(true);
+                                        const payload = { events, tasks, groceries, requests, meals, workFiles, exportedAt: new Date().toISOString() };
+                                        const resp = await fetch('/api/save-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: payload })});
+                                        const json = await resp.json();
+                                        if (!resp.ok) throw new Error(json?.error || 'Backup failed');
+                                        setInfoMessage('Backup saved');
+                                    } catch (e) {
+                                        setRemoteError(e?.message || 'Backup failed');
+                                    } finally {
+                                        setIsBackingUp(false);
+                                    }
+                                }}
+                                className={`text-xs rounded px-2 py-1 ${isBackingUp ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
+                            >{isBackingUp ? 'Backing…' : 'Backup'}</button>
+                            <button
+                                disabled={isRestoring}
+                                onClick={async ()=>{
+                                    try {
+                                        setIsRestoring(true);
+                                        const resp = await fetch('/api/load-backup');
+                                        const json = await resp.json();
+                                        if (!resp.ok) throw new Error(json?.error || 'Restore failed');
+                                        const d = json?.data || {};
+                                        if (Array.isArray(d.events)) setEvents(d.events);
+                                        if (Array.isArray(d.tasks)) setTasks(d.tasks);
+                                        if (Array.isArray(d.groceries)) setGroceries(d.groceries);
+                                        if (Array.isArray(d.requests)) setRequests(d.requests);
+                                        if (Array.isArray(d.meals)) setMeals(d.meals);
+                                        if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
+                                        setInfoMessage('Backup restored');
+                                    } catch (e) {
+                                        setRemoteError(e?.message || 'Restore failed');
+                                    } finally {
+                                        setIsRestoring(false);
+                                    }
+                                }}
+                                className={`text-xs rounded px-2 py-1 ${isRestoring ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
+                            >{isRestoring ? 'Restoring…' : 'Restore'}</button>
                         </div>
                     </div>
                 </div>
@@ -598,23 +682,7 @@ export default function App() {
                             </button>
                         </div>
                     </div>
-                    <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-3">
-                        <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2 text-xs text-gray-700 dark:text-gray-200 h-fit">
-                            <div className="font-semibold mb-1">Calendars</div>
-                            <div className="space-y-1">
-                                <div className="font-medium">Nick</div>
-                                <label className="flex items-center gap-2"><input type="checkbox" checked={!!calendarVisibility.Nick.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, work: e.target.checked }}))} /> Work</label>
-                                <label className="flex items-center gap-2"><input type="checkbox" checked={!!calendarVisibility.Nick.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, personal: e.target.checked }}))} /> Home</label>
-                                <div className="font-medium mt-2">MP</div>
-                                <label className="flex items-center gap-2"><input type="checkbox" checked={!!calendarVisibility.MP.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, work: e.target.checked }}))} /> Work</label>
-                                <label className="flex items-center gap-2"><input type="checkbox" checked={!!calendarVisibility.MP.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, personal: e.target.checked }}))} /> Home</label>
-                                <div className="pt-2 flex gap-2">
-                                    <button className="px-2 py-1 border rounded" onClick={()=> setCalendarVisibility({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } })}>All</button>
-                                    <button className="px-2 py-1 border rounded" onClick={()=> setCalendarVisibility({ Nick: { work: mode==='work', personal: mode==='home' }, MP: { work: mode==='work', personal: mode==='home' } })}>Mode</button>
-                                </div>
-                            </div>
-                        </div>
-                        <div>
+                    <div className="grid grid-cols-1">
                             <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500 dark:text-gray-300">
                                 {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200 dark:border-gray-700">{day}</div>)}
                             </div>
@@ -627,7 +695,6 @@ export default function App() {
                                     <span>{remoteError}</span>
                                 </div>
                             )}
-                        </div>
                     </div>
                     </div>
                     {/* Daily Tasks Sidebar */}
@@ -706,7 +773,7 @@ export default function App() {
                                     <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder={newItemType==='task'?"Add task":"Add event"} className="md:col-span-3 px-3 py-2 border border-gray-300 rounded-lg" />
                                     <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
                                         const t = (newItemTitle||'').trim(); if (!t) return;
-                                        if (newItemType==='task') { addTaskForDay(selectedDayStr, t, newTaskRecurrence, newTaskType); }
+                                        if (newItemType==='task') { addTaskForDay(selectedDayStr, t, newTaskRecurrence, newTaskType==='work' ? 'work' : 'personal'); }
                                         else { addEventForDay(selectedDayStr, t, newEventType); }
                                         setNewItemTitle('');
                                         setNewTaskRecurrence('none');
@@ -819,6 +886,28 @@ export default function App() {
                                                     </div>
                                                 </div>
                 )}
+
+                {/* Filter row under tab bar */}
+                <div className="bg-white dark:bg-gray-900 p-2 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-3">
+                    <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">Calendar Filter:</div>
+                    <select value={calendarTypeFilter} onChange={(e)=> setCalendarTypeFilter(e.target.value)} className="px-2 py-1 text-xs border border-gray-300 rounded">
+                        <option value="work">Work</option>
+                        <option value="home">Home</option>
+                        <option value="all">All</option>
+                    </select>
+                    <div className="flex items-center gap-4 text-xs">
+                        <div className="font-semibold text-gray-700 dark:text-gray-300">Nick</div>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, work: e.target.checked }}))} /> Work</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, personal: e.target.checked }}))} /> Home</label>
+                        <div className="font-semibold text-gray-700 dark:text-gray-300 ml-4">MP</div>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, work: e.target.checked }}))} /> Work</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, personal: e.target.checked }}))} /> Home</label>
+                    </div>
+                    <div className="ml-auto flex items-center gap-2">
+                        <button className="px-2 py-1 border rounded text-xs" onClick={()=> setCalendarVisibility({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } })}>All</button>
+                        <button className="px-2 py-1 border rounded text-xs" onClick={()=> setCalendarVisibility({ Nick: { work: mode==='work', personal: mode==='home' }, MP: { work: mode==='work', personal: mode==='home' } })}>Mode</button>
+                    </div>
+                </div>
 
                 {/* Groceries Tab (Home only) */}
                 {mode==='home' && activeTab === 'groceries' && (
@@ -972,6 +1061,24 @@ export default function App() {
                 {mode==='home' && activeTab==='chores' && (
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-4">
                     <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Chores</div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
+                            <select value={newTaskRecurrence} onChange={(e)=>setNewTaskRecurrence(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                                <option value="none">One-time</option>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="biweekly">Biweekly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                            <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder="Add chore" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-lg" />
+                            <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                                const t = (newItemTitle||'').trim(); if (!t) return;
+                                const todayStr = formatDate(new Date());
+                                addTaskForDay(todayStr, t, newTaskRecurrence, 'personal');
+                                setNewItemTitle(''); setNewTaskRecurrence('none');
+                            }}>Add</button>
+                        </div>
+                    </div>
                     <div className="space-y-2">
                         {tasks.filter(t=> (t.type||'personal')==='personal' && appliesOwnerFilter(t.owner)).map((t)=>{
                             const todayStr = formatDate(new Date());
