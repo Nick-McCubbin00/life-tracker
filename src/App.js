@@ -33,7 +33,15 @@ export default function App() {
     const [theme, setTheme] = useState(() => {
         try { return localStorage.getItem('theme') || 'light'; } catch (_) { return 'light'; }
     });
-    const [calendarTypeFilter, setCalendarTypeFilter] = useState('work'); // 'work' | 'both'
+    const [calendarTypeFilter, setCalendarTypeFilter] = useState('work'); // 'work' | 'home' | 'all'
+    const [calendarVisibility, setCalendarVisibility] = useState(() => {
+        // visibility toggles for calendar: { Nick: { work: true, personal: true }, MP: { work: true, personal: true } }
+        try {
+            const saved = JSON.parse(localStorage.getItem('calendarVisibility')||'null');
+            if (saved && typeof saved==='object') return saved;
+        } catch(_) {}
+        return { Nick: { work: true, personal: true }, MP: { work: true, personal: true } };
+    });
 
     // Collections
     const [tasks, setTasks] = useState([]);      // {id, title, date(YYYY-MM-DD), done, recurrence}
@@ -123,6 +131,15 @@ export default function App() {
         const root = document.documentElement;
         if (theme === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
     }, [theme]);
+
+    useEffect(() => {
+        try { localStorage.setItem('calendarVisibility', JSON.stringify(calendarVisibility)); } catch (_) {}
+    }, [calendarVisibility]);
+
+    useEffect(() => {
+        // default calendar filter according to mode
+        setCalendarTypeFilter(mode==='work' ? 'work' : 'home');
+    }, [mode]);
 
     // Persist currentUser
     useEffect(() => {
@@ -423,8 +440,10 @@ export default function App() {
             let dayClasses = "relative p-2 h-36 text-xs border-r border-b border-gray-200 flex flex-col justify-start items-start transition-colors duration-200 overflow-hidden";
             if (dayStr === todayStr) dayClasses += " bg-blue-50";
 
-            const tasksToday = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate) && appliesOwnerFilter(t.owner) && (calendarTypeFilter==='both' || (t.type||'personal')==='work'));
-            const eventsToday = events.filter(e => e.date === dayStr && appliesOwnerFilter(e.owner) && (calendarTypeFilter==='both' || (e.type||'personal')==='work'));
+            const allowsType = (type) => calendarTypeFilter==='all' || (calendarTypeFilter==='work' ? (type||'personal')==='work' : (type||'personal')==='personal');
+            const allowsOwnerType = (owner, type) => !!(calendarVisibility?.[owner]?.[type==='work'?'work':'personal']);
+            const tasksToday = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate) && appliesOwnerFilter(t.owner) && allowsType(t.type||'personal') && allowsOwnerType(t.owner || 'Nick', (t.type||'personal')));
+            const eventsToday = events.filter(e => e.date === dayStr && appliesOwnerFilter(e.owner) && allowsType(e.type||'personal') && allowsOwnerType(e.owner || 'Nick', (e.type||'personal')));
             const requestsToday = requests.filter(r => r.status === 'approved' && r.approvedDueDate && formatDate(r.approvedDueDate) === dayStr);
 
             calendarDays.push(
@@ -481,106 +500,82 @@ export default function App() {
         <div className="bg-gray-50 dark:bg-gray-950 min-h-screen flex items-center justify-center p-4 font-sans">
             <div className="w-full max-w-7xl mx-auto space-y-4">
 
-                {/* Tabs */}
+                {/* Login screen */}
+                {!currentUser && (
+                    <div className="w-full max-w-md mx-auto bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 text-center">
+                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Select User</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-300 mb-4">Choose who is using the app</div>
+                        <div className="flex items-center justify-center gap-3">
+                            <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=> setCurrentUser('Nick')}>Nick</button>
+                            <button className="px-4 py-2 rounded-lg bg-gray-800 text-white" onClick={()=> setCurrentUser('MP')}>MP</button>
+                        </div>
+                        <div className="mt-4 flex items-center justify-center gap-2 text-xs">
+                            <span className="text-gray-600 dark:text-gray-300">Theme</span>
+                            <button onClick={()=> setTheme(theme==='light'?'dark':'light')} className="p-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">
+                                {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {currentUser && (
+                <>
+                {/* Top banner with mode toggle (blue box) */}
+                <div className="flex items-center justify-center">
+                    <div className="w-full max-w-xl h-16 border-2 border-blue-400 rounded-xl bg-blue-50 flex items-center justify-center gap-2">
+                        <button onClick={()=> setMode('work')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='work' ? 'bg-amber-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Work</button>
+                        <button onClick={()=> setMode('home')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='home' ? 'bg-blue-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Home</button>
+                    </div>
+                </div>
+
+                {/* Tabs: distinct per mode */}
+                {mode==='work' ? (
                 <div className="bg-white dark:bg-gray-900 p-2 rounded-2xl shadow border border-gray-200 dark:border-gray-700">
                     <div className="flex flex-wrap gap-2 items-center">
                         <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
-                        <button onClick={() => setActiveTab('groceries')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='groceries' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ShoppingCart size={16} /> Groceries</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
                         <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Work</button>
                         <div className="ml-auto flex items-center gap-2">
-                            {/* Work/Home toggle center on header for logged-in users */}
-                            {currentUser && (
-                                <div className="flex items-center gap-1 mr-2">
-                                    <button onClick={()=>setMode('work')} className={`px-2 py-1 text-xs rounded ${mode==='work'?'bg-amber-600 text-white':'bg-gray-100 text-gray-700'}`}>Work</button>
-                                    <button onClick={()=>setMode('home')} className={`px-2 py-1 text-xs rounded ${mode==='home'?'bg-blue-600 text-white':'bg-gray-100 text-gray-700'}`}>Home</button>
-                                </div>
-                            )}
-                            {/* Owner filter */}
                             <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
                                 <option value="all">All</option>
                                 <option value="Nick">Nick</option>
                                 <option value="MP">MP</option>
                             </select>
-                            {/* Theme toggle */}
                             <button onClick={()=> setTheme(theme==='light'?'dark':'light')} className="p-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">
                                 {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
                             </button>
-                            {/* Login/Logout */}
-                            {!currentUser ? (
-                                <div className="flex items-center gap-1">
-                                    <button className="px-2 py-1 text-xs bg-gray-100 border border-gray-300 rounded" onClick={()=>setCurrentUser('Nick')}>Login Nick</button>
-                                    <button className="px-2 py-1 text-xs bg-gray-100 border border-gray-300 rounded" onClick={()=>setCurrentUser('MP')}>Login MP</button>
-                                </div>
-                            ) : (
-                                <div className="flex items-center gap-1 text-xs">
-                                    <User size={14} className="text-gray-600" />
-                                    <span className="px-2 py-1 bg-gray-100 rounded border border-gray-300">{currentUser}</span>
-                                    <button className="px-2 py-1 bg-white border border-gray-300 rounded" onClick={()=> setCurrentUser(null)}>Logout</button>
-                                </div>
-                            )}
                             {usingBlob ? (
                                 <span className="text-xs text-green-700 bg-green-100 border border-green-200 rounded px-2 py-1">Blob</span>
                             ) : (
                                 <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
                             )}
-                            <button
-                                disabled={isBackingUp}
-                                onClick={async ()=>{
-                                    try {
-                                        setIsBackingUp(true);
-                                        const payload = {
-                                            events,
-                                            tasks,
-                                            groceries,
-                                            requests,
-                                            meals,
-                                            workFiles,
-                                            exportedAt: new Date().toISOString(),
-                                        };
-                                        const resp = await fetch('/api/save-backup', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ data: payload })
-                                        });
-                                        const json = await resp.json();
-                                        if (!resp.ok) throw new Error(json?.error || 'Backup failed');
-                                        setInfoMessage('Backup saved');
-                                    } catch (e) {
-                                        setRemoteError(e?.message || 'Backup failed');
-                                    } finally {
-                                        setIsBackingUp(false);
-                                    }
-                                }}
-                                className={`text-xs rounded px-2 py-1 ${isBackingUp ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
-                            >{isBackingUp ? 'Backing up…' : 'Backup'}</button>
-                            <button
-                                disabled={isRestoring}
-                                onClick={async ()=>{
-                                    try {
-                                        setIsRestoring(true);
-                                        const resp = await fetch('/api/load-backup');
-                                        const json = await resp.json();
-                                        if (!resp.ok) throw new Error(json?.error || 'Restore failed');
-                                        const d = json?.data || {};
-                                        if (Array.isArray(d.events)) setEvents(d.events);
-                                        if (Array.isArray(d.tasks)) setTasks(d.tasks);
-                                        if (Array.isArray(d.groceries)) setGroceries(d.groceries);
-                                        if (Array.isArray(d.requests)) setRequests(d.requests);
-                                        if (Array.isArray(d.meals)) setMeals(d.meals);
-                                        if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
-                                        setInfoMessage('Backup restored');
-                                    } catch (e) {
-                                        setRemoteError(e?.message || 'Restore failed');
-                                    } finally {
-                                        setIsRestoring(false);
-                                    }
-                                }}
-                                className={`text-xs rounded px-2 py-1 ${isRestoring ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
-                            >{isRestoring ? 'Restoring…' : 'Restore'}</button>
                         </div>
                     </div>
                 </div>
+                ) : (
+                <div className="bg-white dark:bg-gray-900 p-2 rounded-2xl shadow border border-gray-200 dark:border-gray-700">
+                    <div className="flex flex-wrap gap-2 items-center">
+                        <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
+                        <button onClick={() => setActiveTab('groceries')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='groceries' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ShoppingCart size={16} /> Groceries</button>
+                        <button onClick={() => setActiveTab('chores')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='chores' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>Chores</button>
+                        <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
+                        <div className="ml-auto flex items-center gap-2">
+                            <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                <option value="all">All</option>
+                                <option value="Nick">Nick</option>
+                                <option value="MP">MP</option>
+                            </select>
+                            <button onClick={()=> setTheme(theme==='light'?'dark':'light')} className="p-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">
+                                {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
+                            </button>
+                            {usingBlob ? (
+                                <span className="text-xs text-green-700 bg-green-100 border border-green-200 rounded px-2 py-1">Blob</span>
+                            ) : (
+                                <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+                )}
 
                 {/* --- Calendar Display --- */}
                 {activeTab === 'calendar' && (
@@ -591,8 +586,9 @@ export default function App() {
                         <div className="flex items-center gap-2">
                                 <button onClick={()=> setSelectedDayStr(formatDate(new Date()))} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">Open Today</button>
                                 <select value={calendarTypeFilter} onChange={(e)=> setCalendarTypeFilter(e.target.value)} className="px-2 py-1 text-xs border border-gray-300 rounded">
-                                    <option value="work">Work only</option>
-                                    <option value="both">Work + Home</option>
+                                    <option value="work">Work</option>
+                                    <option value="home">Home</option>
+                                    <option value="all">All</option>
                                 </select>
                             <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
                                 <ChevronLeft className="text-gray-600" size={20} />
@@ -602,18 +598,37 @@ export default function App() {
                             </button>
                         </div>
                     </div>
-                    <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500 dark:text-gray-300">
-                        {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200 dark:border-gray-700">{day}</div>)}
-                    </div>
-                    <div className="grid grid-cols-7 grid-rows-6">
-                        {renderCalendar()}
-                    </div>
-                    {remoteError && (
-                        <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
-                            <AlertTriangle size={14} />
-                            <span>{remoteError}</span>
+                    <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-3">
+                        <div className="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2 text-xs text-gray-700 dark:text-gray-200 h-fit">
+                            <div className="font-semibold mb-1">Calendars</div>
+                            <div className="space-y-1">
+                                <div className="font-medium">Nick</div>
+                                <label className="flex items-center gap-2"><input type="checkbox" checked={!!calendarVisibility.Nick.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, work: e.target.checked }}))} /> Work</label>
+                                <label className="flex items-center gap-2"><input type="checkbox" checked={!!calendarVisibility.Nick.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, personal: e.target.checked }}))} /> Home</label>
+                                <div className="font-medium mt-2">MP</div>
+                                <label className="flex items-center gap-2"><input type="checkbox" checked={!!calendarVisibility.MP.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, work: e.target.checked }}))} /> Work</label>
+                                <label className="flex items-center gap-2"><input type="checkbox" checked={!!calendarVisibility.MP.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, personal: e.target.checked }}))} /> Home</label>
+                                <div className="pt-2 flex gap-2">
+                                    <button className="px-2 py-1 border rounded" onClick={()=> setCalendarVisibility({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } })}>All</button>
+                                    <button className="px-2 py-1 border rounded" onClick={()=> setCalendarVisibility({ Nick: { work: mode==='work', personal: mode==='home' }, MP: { work: mode==='work', personal: mode==='home' } })}>Mode</button>
+                                </div>
+                            </div>
                         </div>
-                    )}
+                        <div>
+                            <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500 dark:text-gray-300">
+                                {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200 dark:border-gray-700">{day}</div>)}
+                            </div>
+                            <div className="grid grid-cols-7 grid-rows-6">
+                                {renderCalendar()}
+                            </div>
+                            {remoteError && (
+                                <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
+                                    <AlertTriangle size={14} />
+                                    <span>{remoteError}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
                     </div>
                     {/* Daily Tasks Sidebar */}
                     <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 h-fit lg:sticky lg:top-4">
@@ -805,8 +820,8 @@ export default function App() {
                                                 </div>
                 )}
 
-                {/* Groceries Tab */}
-                {activeTab === 'groceries' && (
+                {/* Groceries Tab (Home only) */}
+                {mode==='home' && activeTab === 'groceries' && (
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
                     <div className="flex items-center gap-3">
                         <div className={`text-sm font-semibold px-3 py-1 rounded cursor-pointer ${groceriesSubtab==='list' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`} onClick={()=>setGroceriesSubtab('list')}>List</div>
@@ -953,40 +968,25 @@ export default function App() {
                 </div>
                 )}
 
-                {/* Home Mode: Chores, Fiance Requests (alias), Groceries, Meal planner quick links */}
-                {mode === 'home' && activeTab !== 'groceries' && activeTab !== 'requests' && activeTab !== 'calendar' && (
+                {/* Home: Chores tab */}
+                {mode==='home' && activeTab==='chores' && (
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-4">
-                    <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Home</div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">Chores Today</div>
-                            {tasks.filter(t=> (t.type||'personal')==='personal' && occursOnDay(t, new Date()) && appliesOwnerFilter(t.owner)).map((t)=>{
-                                const todayStr = formatDate(new Date());
-                                const checked = isTaskDoneOnDate(t, todayStr);
-                                return (
-                                    <label key={`home-${t.id}`} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-2 py-2 text-xs">
-                                        <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, todayStr)} />
-                                        <span className={checked ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
-                                        <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={12} /></button>
-                                    </label>
-                                );
-                            })}
-                            {tasks.filter(t=> (t.type||'personal')==='personal' && occursOnDay(t, new Date()) && appliesOwnerFilter(t.owner)).length===0 && (
-                                <div className="text-xs text-gray-500">No chores for today.</div>
-                            )}
-                        </div>
-                        <div className="space-y-2">
-                            <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">From Fiancé</div>
-                            {requests.filter(r=> appliesOwnerFilter(r.owner) && r.status==='pending').map((r)=> (
-                                <div key={`home-r-${r.id}`} className="rounded px-3 py-2 text-sm" style={{ backgroundColor: '#ffd6e7', border: '1px solid #f5a6bd' }}>
-                                    <div className="font-semibold text-[#7a2946]">{r.title}</div>
-                                    <div className="text-xs text-[#7a2946]">Priority: <span className="capitalize">{r.priority}</span></div>
-                                </div>
-                            ))}
-                            {requests.filter(r=> appliesOwnerFilter(r.owner) && r.status==='pending').length===0 && (
-                                <div className="text-xs text-gray-500">No requests.</div>
-                            )}
-                        </div>
+                    <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Chores</div>
+                    <div className="space-y-2">
+                        {tasks.filter(t=> (t.type||'personal')==='personal' && appliesOwnerFilter(t.owner)).map((t)=>{
+                            const todayStr = formatDate(new Date());
+                            const checked = isTaskDoneOnDate(t, todayStr);
+                            return (
+                                <label key={`home-${t.id}`} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-2 py-2 text-xs">
+                                    <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, todayStr)} />
+                                    <span className={checked ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
+                                    <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={12} /></button>
+                                </label>
+                            );
+                        })}
+                        {tasks.filter(t=> (t.type||'personal')==='personal' && appliesOwnerFilter(t.owner)).length===0 && (
+                            <div className="text-xs text-gray-500">No chores yet.</div>
+                        )}
                     </div>
                 </div>
                 )}
@@ -1051,8 +1051,8 @@ export default function App() {
                 </div>
                 )}
 
-                {/* Work Tab */}
-                {activeTab === 'work' && (
+                {/* Work Tab (Work mode only) */}
+                {mode==='work' && activeTab === 'work' && (
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-4">
                     <div className="flex items-center gap-2">
                         <Briefcase size={18} />
@@ -1243,6 +1243,8 @@ export default function App() {
                             </div>
                         </div>
                     </div>
+                )}
+                </>
                 )}
 
             </div>
