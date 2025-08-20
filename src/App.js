@@ -887,7 +887,8 @@ export default function App() {
                                                 </div>
                 )}
 
-                {/* Filter row under tab bar */}
+                {/* Filter row under tab bar - only on calendar tab */}
+                {activeTab==='calendar' && (
                 <div className="bg-white dark:bg-gray-900 p-2 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-3">
                     <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">Calendar Filter:</div>
                     <select value={calendarTypeFilter} onChange={(e)=> setCalendarTypeFilter(e.target.value)} className="px-2 py-1 text-xs border border-gray-300 rounded">
@@ -908,6 +909,7 @@ export default function App() {
                         <button className="px-2 py-1 border rounded text-xs" onClick={()=> setCalendarVisibility({ Nick: { work: mode==='work', personal: mode==='home' }, MP: { work: mode==='work', personal: mode==='home' } })}>Mode</button>
                     </div>
                 </div>
+                )}
 
                 {/* Groceries Tab (Home only) */}
                 {mode==='home' && activeTab === 'groceries' && (
