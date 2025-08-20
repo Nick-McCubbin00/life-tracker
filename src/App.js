@@ -533,7 +533,7 @@ export default function App() {
                     <div className="flex flex-wrap gap-2 items-center">
                         <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
-                        <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Work</button>
+                        <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Tasks</button>
                         <div className="ml-auto flex items-center gap-2">
                             <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
                                 <option value="all">All</option>
@@ -1103,60 +1103,100 @@ export default function App() {
                 {/* Requests Tab */}
                 {activeTab === 'requests' && (
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
-                    <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Fiancé Requests</div>
-                    <div className="text-xs text-gray-500">Add, approve, or complete requests. Approved requests appear on the calendar (light pink) on their approved date.</div>
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                        <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
-                            <input value={reqFormTitle} onChange={(e)=>setReqFormTitle(e.target.value)} placeholder="Title" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                            <select value={reqFormPriority} onChange={(e)=>setReqFormPriority(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
-                                <option value="low">Low</option>
-                                <option value="medium">Medium</option>
-                                <option value="high">High</option>
-                            </select>
-                            <input type="date" value={reqFormDueDate} onChange={(e)=>setReqFormDueDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
-                            <input value={reqFormDetails} onChange={(e)=>setReqFormDetails(e.target.value)} placeholder="Details (optional)" className="px-3 py-2 border border-gray-300 rounded-lg md:col-span-2" />
-                            <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
-                                if (!reqFormTitle.trim()) return;
-                                const id = generateId();
-                                const payload = {
-                                    id,
-                                    title: reqFormTitle.trim(),
-                                    details: reqFormDetails.trim(),
-                                    priority: reqFormPriority,
-                                    requestedDueDate: reqFormDueDate ? new Date(reqFormDueDate).toISOString() : null,
-                                    approved: false,
-                                    approvedDueDate: null,
-                                    status: 'pending',
-                                };
-                                setRequests((prev)=>[...prev, { ...payload, owner: currentUser || 'Nick' }]);
-                                setReqFormTitle(''); setReqFormDetails(''); setReqFormDueDate(''); setReqFormPriority('medium');
-                            }}>Add</button>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2">
-                        {requests.length === 0 && <div className="text-xs text-gray-500">No requests.</div>}
-                        {requests.filter(r=> appliesOwnerFilter(r.owner)).sort((a,b)=>{
-                            const pri = { high: 0, medium: 1, low: 2 };
-                            return pri[a.priority]-pri[b.priority];
-                        }).map((r)=>(
-                            <div key={r.id} className="flex items-center justify-between rounded px-3 py-2 text-sm" style={{ backgroundColor: '#ffd6e7', border: '1px solid #f5a6bd' }}>
-                                <div>
-                                    <div className="font-semibold text-[#7a2946]">{r.title}</div>
-                                    <div className="text-xs text-[#7a2946]">Priority: <span className="capitalize">{r.priority}</span>{r.requestedDueDate ? ` · requested ${new Date(r.requestedDueDate).toLocaleDateString()}` : ''}{r.approvedDueDate ? ` · approved ${new Date(r.approvedDueDate).toLocaleDateString()}` : ''}</div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    {r.status==='pending' && (
-                                        <>
-                                            <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>approveRequest(r.id, e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs" />
-                                            <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>
-                                        </>
-                                    )}
-                                    {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
-                                    <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>
-                                </div>
+                    {mode==='work' ? (
+                    <>
+                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Boss Requests</div>
+                        <div className="text-xs text-gray-500">Add, approve, or complete requests from your boss. Approved requests appear on the calendar on their approved date.</div>
+                        <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
+                            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                                <input value={bossReqTitle} onChange={(e)=>setBossReqTitle(e.target.value)} placeholder="Title" className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                <select value={bossReqPriority} onChange={(e)=>setBossReqPriority(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm">
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                                <input type="date" value={bossReqDueDate} onChange={(e)=>setBossReqDueDate(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                <input value={bossReqDetails} onChange={(e)=>setBossReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
+                                <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={()=>{
+                                    if (!bossReqTitle.trim()) return;
+                                    handleAddRequest(bossReqDueDate || formatDate(new Date()), bossReqTitle, bossReqPriority, bossReqDetails, 'boss');
+                                    setBossReqTitle(''); setBossReqPriority('medium'); setBossReqDueDate(''); setBossReqDetails('');
+                                }}>Add</button>
                             </div>
-                        ))}
-                    </div>
+                            <div className="space-y-2">
+                                {requests.filter(r=> r.source==='boss' && appliesOwnerFilter(r.owner)).map((r)=>(
+                                    <div key={`boss-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-amber-200">
+                                        <div>
+                                            <div className="font-semibold text-gray-800">{r.title}</div>
+                                            <div className="text-[11px] text-gray-600 capitalize">{r.priority}</div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {r.status==='pending' && <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>}
+                                            {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>completeRequest(r.id)}>Done</button>}
+                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={12}/></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </>
+                    ) : (
+                    <>
+                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Fiancé Requests</div>
+                        <div className="text-xs text-gray-500">Add, approve, or complete requests. Approved requests appear on the calendar (light pink) on their approved date.</div>
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                                <input value={reqFormTitle} onChange={(e)=>setReqFormTitle(e.target.value)} placeholder="Title" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                                <select value={reqFormPriority} onChange={(e)=>setReqFormPriority(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                                <input type="date" value={reqFormDueDate} onChange={(e)=>setReqFormDueDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                                <input value={reqFormDetails} onChange={(e)=>setReqFormDetails(e.target.value)} placeholder="Details (optional)" className="px-3 py-2 border border-gray-300 rounded-lg md:col-span-2" />
+                                <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                                    if (!reqFormTitle.trim()) return;
+                                    const id = generateId();
+                                    const payload = {
+                                        id,
+                                        title: reqFormTitle.trim(),
+                                        details: reqFormDetails.trim(),
+                                        priority: reqFormPriority,
+                                        requestedDueDate: reqFormDueDate ? new Date(reqFormDueDate).toISOString() : null,
+                                        approved: false,
+                                        approvedDueDate: null,
+                                        status: 'pending',
+                                        source: 'fiance',
+                                    };
+                                    setRequests((prev)=>[...prev, { ...payload, owner: currentUser || 'Nick' }]);
+                                    setReqFormTitle(''); setReqFormDetails(''); setReqFormDueDate(''); setReqFormPriority('medium');
+                                }}>Add</button>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                            {requests.filter(r=> r.source!=='boss' && appliesOwnerFilter(r.owner)).sort((a,b)=>{
+                                const pri = { high: 0, medium: 1, low: 2 };
+                                return pri[a.priority]-pri[b.priority];
+                            }).map((r)=>(
+                                <div key={r.id} className="flex items-center justify-between rounded px-3 py-2 text-sm" style={{ backgroundColor: '#ffd6e7', border: '1px solid #f5a6bd' }}>
+                                    <div>
+                                        <div className="font-semibold text-[#7a2946]">{r.title}</div>
+                                        <div className="text-xs text-[#7a2946]">Priority: <span className="capitalize">{r.priority}</span>{r.requestedDueDate ? ` · requested ${new Date(r.requestedDueDate).toLocaleDateString()}` : ''}{r.approvedDueDate ? ` · approved ${new Date(r.approvedDueDate).toLocaleDateString()}` : ''}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {r.status==='pending' && (
+                                            <>
+                                                <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>approveRequest(r.id, e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs" />
+                                                <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>
+                                            </>
+                                        )}
+                                        {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
+                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </> )}
                 </div>
                 )}
 
@@ -1167,40 +1207,6 @@ export default function App() {
                         <Briefcase size={18} />
                         <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Work — Today</div>
                         <div className="ml-auto text-xs text-gray-500">{formatDate(new Date())}</div>
-                    </div>
-                    {/* Boss requests input */}
-                    <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
-                        <div className="text-sm font-semibold text-amber-800">Boss Requests</div>
-                        <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
-                            <input value={bossReqTitle} onChange={(e)=>setBossReqTitle(e.target.value)} placeholder="Title" className="px-2 py-1 border border-amber-300 rounded text-sm" />
-                            <select value={bossReqPriority} onChange={(e)=>setBossReqPriority(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm">
-                                <option value="low">Low</option>
-                                <option value="medium">Medium</option>
-                                <option value="high">High</option>
-                            </select>
-                            <input type="date" value={bossReqDueDate} onChange={(e)=>setBossReqDueDate(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm" />
-                            <input value={bossReqDetails} onChange={(e)=>setBossReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
-                            <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={()=>{
-                                if (!bossReqTitle.trim()) return;
-                                handleAddRequest(bossReqDueDate || formatDate(new Date()), bossReqTitle, bossReqPriority, bossReqDetails, 'boss');
-                                setBossReqTitle(''); setBossReqPriority('medium'); setBossReqDueDate(''); setBossReqDetails('');
-                            }}>Add</button>
-                    </div>
-                    <div className="space-y-2">
-                            {requests.filter(r=> r.source==='boss' && appliesOwnerFilter(r.owner)).map((r)=>(
-                                <div key={`boss-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-amber-200">
-                                    <div>
-                                        <div className="font-semibold text-gray-800">{r.title}</div>
-                                        <div className="text-[11px] text-gray-600 capitalize">{r.priority}</div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        {r.status==='pending' && <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>}
-                                        {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>completeRequest(r.id)}>Done</button>}
-                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={12}/></button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
                     </div>
                     {/* Quick upload for work files */}
                     <div className="flex items-center gap-2 text-xs">
