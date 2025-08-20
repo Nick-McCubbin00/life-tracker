@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, CalendarDays, ShoppingCart, Star, Briefcase, Clipboard } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, CalendarDays, ShoppingCart, Star, Briefcase, Clipboard, Sun, Moon, Upload, User } from 'lucide-react';
 
 // Helper to format date to 'YYYY-MM-DD'
 const formatDate = (date) => {
@@ -24,9 +24,20 @@ export default function App() {
     const [infoMessage, setInfoMessage] = useState('');
     const infoTimerRef = useRef(null);
 
+    // Auth / User & global filters
+    const [currentUser, setCurrentUser] = useState(() => {
+        try { return localStorage.getItem('currentUser') || null; } catch (_) { return null; }
+    });
+    const [ownerFilter, setOwnerFilter] = useState('all'); // 'all' | 'Nick' | 'MP'
+    const [mode, setMode] = useState('work'); // 'work' | 'home'
+    const [theme, setTheme] = useState(() => {
+        try { return localStorage.getItem('theme') || 'light'; } catch (_) { return 'light'; }
+    });
+    const [calendarTypeFilter, setCalendarTypeFilter] = useState('work'); // 'work' | 'both'
+
     // Collections
     const [tasks, setTasks] = useState([]);      // {id, title, date(YYYY-MM-DD), done, recurrence}
-    const [events, setEvents] = useState([]);    // {id, title, date(YYYY-MM-DD)}
+    const [events, setEvents] = useState([]);    // {id, title, date(YYYY-MM-DD), type('work'|'personal'), owner}
     const [groceries, setGroceries] = useState([]); // {id, name, quantity, checked}
     const [requests, setRequests] = useState([]);   // {id, title, details, priority, requestedDueDate, approved, approvedDueDate, status}
 
@@ -35,6 +46,7 @@ export default function App() {
     const [newItemTitle, setNewItemTitle] = useState('');
     const [newTaskRecurrence, setNewTaskRecurrence] = useState('none'); // none | daily | weekly | biweekly | monthly
     const [newTaskType, setNewTaskType] = useState('personal'); // personal | work
+    const [newEventType, setNewEventType] = useState('work'); // personal | work
     const [newRequestTitle, setNewRequestTitle] = useState('');
     const [newRequestPriority, setNewRequestPriority] = useState('medium');
     const [requestDetails, setRequestDetails] = useState('');
@@ -48,6 +60,12 @@ export default function App() {
     const [reqFormPriority, setReqFormPriority] = useState('medium');
     const [reqFormDueDate, setReqFormDueDate] = useState('');
     const [reqFormDetails, setReqFormDetails] = useState('');
+
+    // Boss requests (work)
+    const [bossReqTitle, setBossReqTitle] = useState('');
+    const [bossReqPriority, setBossReqPriority] = useState('medium');
+    const [bossReqDueDate, setBossReqDueDate] = useState('');
+    const [bossReqDetails, setBossReqDetails] = useState('');
 
     // Sidebar filter
     const [sidebarRecurrence, setSidebarRecurrence] = useState('daily'); // daily | weekly | biweekly | monthly
@@ -71,7 +89,7 @@ export default function App() {
     const [newSubTitleByTask, setNewSubTitleByTask] = useState({});
 
     // Meals / Meal Planner
-    const [meals, setMeals] = useState([]); // {id,title,recipe,link,ingredients:[{id,name,quantity}]}
+    const [meals, setMeals] = useState([]); // {id,title,recipe,link,ingredients:[{id,name,quantity}], fileUrl?, owner}
     const [groceriesSubtab, setGroceriesSubtab] = useState('list'); // list | planner
     // New meal form
     const [mealTitle, setMealTitle] = useState('');
@@ -84,9 +102,32 @@ export default function App() {
     const [plannerWeekStart, setPlannerWeekStart] = useState(formatDate(new Date()));
     const [plannerSelection, setPlannerSelection] = useState({}); // {0..6: mealId}
 
+    // Meal file attachment
+    const [mealFileUrl, setMealFileUrl] = useState('');
+
+    // Work files
+    const [workFiles, setWorkFiles] = useState([]); // {id,title,url,owner,uploadedAt}
+
+    // Sync mode to active tab
+    useEffect(() => {
+        setActiveTab(mode === 'work' ? 'work' : 'home');
+    }, [mode]);
+
     // Backup/Restore in-progress state
     const [isBackingUp, setIsBackingUp] = useState(false);
     const [isRestoring, setIsRestoring] = useState(false);
+
+    // Sync theme with document root
+    useEffect(() => {
+        try { localStorage.setItem('theme', theme); } catch (_) {}
+        const root = document.documentElement;
+        if (theme === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
+    }, [theme]);
+
+    // Persist currentUser
+    useEffect(() => {
+        try { if (currentUser) localStorage.setItem('currentUser', currentUser); else localStorage.removeItem('currentUser'); } catch (_) {}
+    }, [currentUser]);
 
     // Load state from Blob first (awaited), prefer freshest between Blob and localStorage using savedAt
     useEffect(() => {
@@ -98,6 +139,7 @@ export default function App() {
                 try { out.requests = JSON.parse(localStorage.getItem('requests')||'null') || undefined; } catch (_) {}
                 try { out.events = JSON.parse(localStorage.getItem('events')||'null') || undefined; } catch (_) {}
                 try { out.meals = JSON.parse(localStorage.getItem('meals')||'null') || undefined; } catch (_) {}
+                try { out.workFiles = JSON.parse(localStorage.getItem('workFiles')||'null') || undefined; } catch (_) {}
                 try { out.savedAt = localStorage.getItem('savedAt') || null; } catch (_) {}
                 return out;
             };
@@ -116,6 +158,7 @@ export default function App() {
                         groceries: Array.isArray(d.groceries) ? d.groceries : undefined,
                         requests: Array.isArray(d.requests) ? d.requests : undefined,
                         meals: Array.isArray(d.meals) ? d.meals : undefined,
+                        workFiles: Array.isArray(d.workFiles) ? d.workFiles : undefined,
                     };
                     const hasAnyItems = Object.values(arrays).some((v) => Array.isArray(v) && v.length > 0);
                     const local = readLocal();
@@ -129,12 +172,14 @@ export default function App() {
                         if (Array.isArray(local.groceries)) setGroceries(local.groceries);
                         if (Array.isArray(local.requests)) setRequests(local.requests);
                         if (Array.isArray(local.meals)) setMeals(local.meals);
+                        if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
                     } else {
                         if (arrays.events) setEvents(arrays.events);
                         if (arrays.tasks) setTasks(arrays.tasks);
                         if (arrays.groceries) setGroceries(arrays.groceries);
                         if (arrays.requests) setRequests(arrays.requests);
                         if (arrays.meals) setMeals(arrays.meals);
+                        if (arrays.workFiles) setWorkFiles(arrays.workFiles);
                     }
                 } else {
                     setUsingBlob(false);
@@ -144,6 +189,7 @@ export default function App() {
                     if (Array.isArray(local.groceries)) setGroceries(local.groceries);
                     if (Array.isArray(local.requests)) setRequests(local.requests);
                     if (Array.isArray(local.meals)) setMeals(local.meals);
+                    if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
                 }
             } catch (_) {
                 setUsingBlob(false);
@@ -153,6 +199,7 @@ export default function App() {
                 if (Array.isArray(local.groceries)) setGroceries(local.groceries);
                 if (Array.isArray(local.requests)) setRequests(local.requests);
                 if (Array.isArray(local.meals)) setMeals(local.meals);
+                if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
             }
         })();
     }, []);
@@ -173,6 +220,7 @@ export default function App() {
                             groceries,
                             requests,
                             meals,
+                            workFiles,
                             savedAt: nowIso,
                         }),
                     });
@@ -182,7 +230,7 @@ export default function App() {
             }
         }, 400);
         return () => clearTimeout(save);
-    }, [events, tasks, groceries, requests, meals, usingBlob]);
+    }, [events, tasks, groceries, requests, meals, workFiles, usingBlob]);
 
     // Persist collections
     useEffect(() => { try { localStorage.setItem('events', JSON.stringify(events)); } catch (_) {} }, [events]);
@@ -190,6 +238,7 @@ export default function App() {
     useEffect(() => { try { localStorage.setItem('groceries', JSON.stringify(groceries)); } catch (_) {} }, [groceries]);
     useEffect(() => { try { localStorage.setItem('requests', JSON.stringify(requests)); } catch (_) {} }, [requests]);
     useEffect(() => { try { localStorage.setItem('meals', JSON.stringify(meals)); } catch (_) {} }, [meals]);
+    useEffect(() => { try { localStorage.setItem('workFiles', JSON.stringify(workFiles)); } catch (_) {} }, [workFiles]);
 
     // Memoized values for calendar generation to prevent recalculation on every render
     const { month, year, daysInMonth, firstDayOfMonth } = useMemo(() => {
@@ -211,6 +260,7 @@ export default function App() {
 
     // Utilities
     const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const appliesOwnerFilter = (owner) => ownerFilter === 'all' || owner === ownerFilter;
     const parseYmd = (ymd) => {
         if (!ymd) return new Date();
         const parts = String(ymd).split('-').map((p) => parseInt(p, 10));
@@ -226,7 +276,8 @@ export default function App() {
         const trimmed = title.trim();
         if (!trimmed) return;
         const id = generateId();
-        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, completedDates: [], recurrence, notes: '', type, priority: type==='work' ? 2 : null, estimate: type==='work' ? '' : null, subtasks: [] }]);
+        const owner = currentUser || 'Nick';
+        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, completedDates: [], recurrence, notes: '', type, priority: type==='work' ? 2 : null, estimate: type==='work' ? '' : null, subtasks: [], owner }]);
     };
     const addSubtask = (taskId, title) => {
         const trimmed = (title || '').trim();
@@ -269,11 +320,12 @@ export default function App() {
     };
 
     // Events
-    const addEventForDay = (dayStr, title) => {
+    const addEventForDay = (dayStr, title, type = 'work') => {
         const trimmed = title.trim();
         if (!trimmed) return;
         const id = generateId();
-        setEvents((prev) => [...prev, { id, title: trimmed, date: dayStr, notes: '' }]);
+        const owner = currentUser || 'Nick';
+        setEvents((prev) => [...prev, { id, title: trimmed, date: dayStr, notes: '', type, owner }]);
     };
     const deleteEvent = (eventId) => {
         setEvents((prev) => prev.filter((e) => e.id !== eventId));
@@ -300,7 +352,7 @@ export default function App() {
     };
 
     // Requests
-    const handleAddRequest = (dueDayStr, title, priority, details) => {
+    const handleAddRequest = (dueDayStr, title, priority, details, source = 'fiance') => {
         const t = title.trim();
         if (!t) return;
         const id = generateId();
@@ -313,6 +365,8 @@ export default function App() {
             approved: false,
             approvedDueDate: null,
             status: 'pending',
+            source,
+            owner: currentUser || 'Nick',
         };
         setRequests((prev) => [...prev, payload]);
         setNewRequestTitle('');
@@ -369,8 +423,8 @@ export default function App() {
             let dayClasses = "relative p-2 h-36 text-xs border-r border-b border-gray-200 flex flex-col justify-start items-start transition-colors duration-200 overflow-hidden";
             if (dayStr === todayStr) dayClasses += " bg-blue-50";
 
-            const tasksToday = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate));
-            const eventsToday = events.filter(e => e.date === dayStr);
+            const tasksToday = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate) && appliesOwnerFilter(t.owner) && (calendarTypeFilter==='both' || (t.type||'personal')==='work'));
+            const eventsToday = events.filter(e => e.date === dayStr && appliesOwnerFilter(e.owner) && (calendarTypeFilter==='both' || (e.type||'personal')==='work'));
             const requestsToday = requests.filter(r => r.status === 'approved' && r.approvedDueDate && formatDate(r.approvedDueDate) === dayStr);
 
             calendarDays.push(
@@ -424,17 +478,47 @@ export default function App() {
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
     return (
-        <div className="bg-gray-50 min-h-screen flex items-center justify-center p-4 font-sans">
+        <div className="bg-gray-50 dark:bg-gray-950 min-h-screen flex items-center justify-center p-4 font-sans">
             <div className="w-full max-w-7xl mx-auto space-y-4">
 
                 {/* Tabs */}
-                <div className="bg-white p-2 rounded-2xl shadow border border-gray-200">
+                <div className="bg-white dark:bg-gray-900 p-2 rounded-2xl shadow border border-gray-200 dark:border-gray-700">
                     <div className="flex flex-wrap gap-2 items-center">
                         <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
                         <button onClick={() => setActiveTab('groceries')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='groceries' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ShoppingCart size={16} /> Groceries</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
                         <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Work</button>
                         <div className="ml-auto flex items-center gap-2">
+                            {/* Work/Home toggle center on header for logged-in users */}
+                            {currentUser && (
+                                <div className="flex items-center gap-1 mr-2">
+                                    <button onClick={()=>setMode('work')} className={`px-2 py-1 text-xs rounded ${mode==='work'?'bg-amber-600 text-white':'bg-gray-100 text-gray-700'}`}>Work</button>
+                                    <button onClick={()=>setMode('home')} className={`px-2 py-1 text-xs rounded ${mode==='home'?'bg-blue-600 text-white':'bg-gray-100 text-gray-700'}`}>Home</button>
+                                </div>
+                            )}
+                            {/* Owner filter */}
+                            <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                <option value="all">All</option>
+                                <option value="Nick">Nick</option>
+                                <option value="MP">MP</option>
+                            </select>
+                            {/* Theme toggle */}
+                            <button onClick={()=> setTheme(theme==='light'?'dark':'light')} className="p-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">
+                                {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
+                            </button>
+                            {/* Login/Logout */}
+                            {!currentUser ? (
+                                <div className="flex items-center gap-1">
+                                    <button className="px-2 py-1 text-xs bg-gray-100 border border-gray-300 rounded" onClick={()=>setCurrentUser('Nick')}>Login Nick</button>
+                                    <button className="px-2 py-1 text-xs bg-gray-100 border border-gray-300 rounded" onClick={()=>setCurrentUser('MP')}>Login MP</button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center gap-1 text-xs">
+                                    <User size={14} className="text-gray-600" />
+                                    <span className="px-2 py-1 bg-gray-100 rounded border border-gray-300">{currentUser}</span>
+                                    <button className="px-2 py-1 bg-white border border-gray-300 rounded" onClick={()=> setCurrentUser(null)}>Logout</button>
+                                </div>
+                            )}
                             {usingBlob ? (
                                 <span className="text-xs text-green-700 bg-green-100 border border-green-200 rounded px-2 py-1">Blob</span>
                             ) : (
@@ -450,6 +534,8 @@ export default function App() {
                                             tasks,
                                             groceries,
                                             requests,
+                                            meals,
+                                            workFiles,
                                             exportedAt: new Date().toISOString(),
                                         };
                                         const resp = await fetch('/api/save-backup', {
@@ -481,6 +567,8 @@ export default function App() {
                                         if (Array.isArray(d.tasks)) setTasks(d.tasks);
                                         if (Array.isArray(d.groceries)) setGroceries(d.groceries);
                                         if (Array.isArray(d.requests)) setRequests(d.requests);
+                                        if (Array.isArray(d.meals)) setMeals(d.meals);
+                                        if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
                                         setInfoMessage('Backup restored');
                                     } catch (e) {
                                         setRemoteError(e?.message || 'Restore failed');
@@ -497,11 +585,15 @@ export default function App() {
                 {/* --- Calendar Display --- */}
                 {activeTab === 'calendar' && (
                 <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
-                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
+                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">{monthNames[month]} {year}</h3>
                         <div className="flex items-center gap-2">
                                 <button onClick={()=> setSelectedDayStr(formatDate(new Date()))} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">Open Today</button>
+                                <select value={calendarTypeFilter} onChange={(e)=> setCalendarTypeFilter(e.target.value)} className="px-2 py-1 text-xs border border-gray-300 rounded">
+                                    <option value="work">Work only</option>
+                                    <option value="both">Work + Home</option>
+                                </select>
                             <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
                                 <ChevronLeft className="text-gray-600" size={20} />
                             </button>
@@ -510,8 +602,8 @@ export default function App() {
                             </button>
                         </div>
                     </div>
-                    <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500">
-                        {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200">{day}</div>)}
+                    <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500 dark:text-gray-300">
+                        {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200 dark:border-gray-700">{day}</div>)}
                     </div>
                     <div className="grid grid-cols-7 grid-rows-6">
                         {renderCalendar()}
@@ -524,9 +616,9 @@ export default function App() {
                     )}
                     </div>
                     {/* Daily Tasks Sidebar */}
-                    <div className="bg-white p-4 rounded-2xl shadow-lg border border-gray-200 h-fit lg:sticky lg:top-4">
+                    <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 h-fit lg:sticky lg:top-4">
                         <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-sm font-bold text-gray-800">Tasks</h4>
+                            <h4 className="text-sm font-bold text-gray-800 dark:text-gray-100">Tasks</h4>
                             <div className="flex items-center gap-2">
                                 <select value={sidebarRecurrence} onChange={(e)=>setSidebarRecurrence(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-[11px]">
                                     <option value="daily">Daily</option>
@@ -538,10 +630,10 @@ export default function App() {
                             </div>
                         </div>
                         <div className="space-y-2">
-                            {tasks.filter(t=>t.recurrence===sidebarRecurrence).length===0 && (
+                            {tasks.filter(t=>t.recurrence===sidebarRecurrence && appliesOwnerFilter(t.owner)).length===0 && (
                                 <div className="text-xs text-gray-500">No {sidebarRecurrence} tasks.</div>
                             )}
-                            {tasks.filter(t=>t.recurrence===sidebarRecurrence).map((t)=>{
+                            {tasks.filter(t=>t.recurrence===sidebarRecurrence && appliesOwnerFilter(t.owner)).map((t)=>{
                                 const todayStr = formatDate(new Date());
                                 const checked = isTaskDoneOnDate(t, todayStr);
                                 return (
@@ -561,9 +653,9 @@ export default function App() {
             {selectedDayStr && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center">
                     <div className="absolute inset-0 bg-black/30" onClick={()=>setSelectedDayStr(null)} />
-                    <div className="relative bg-white w-full max-w-2xl mx-4 rounded-2xl shadow-xl border border-gray-200 p-4">
+                    <div className="relative bg-white dark:bg-gray-900 w-full max-w-2xl mx-4 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-4">
                         <div className="flex items-center justify-between mb-3">
-                            <div className="text-lg font-bold text-gray-800">{new Date(selectedDayStr+"T00:00:00").toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric'})}</div>
+                            <div className="text-lg font-bold text-gray-800 dark:text-gray-100">{new Date(selectedDayStr+"T00:00:00").toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric'})}</div>
                             <button className="p-1 rounded hover:bg-gray-100" onClick={()=>setSelectedDayStr(null)}><X size={18} /></button>
                         </div>
                         <div className="space-y-3">
@@ -588,14 +680,23 @@ export default function App() {
                                             </select>
                                         </div>
                                     )}
+                                    {newItemType==='event' && (
+                                        <div className="grid grid-cols-1">
+                                            <select value={newEventType} onChange={(e)=>setNewEventType(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                                                <option value="work">Work</option>
+                                                <option value="personal">Personal</option>
+                                            </select>
+                                        </div>
+                                    )}
                                     <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder={newItemType==='task'?"Add task":"Add event"} className="md:col-span-3 px-3 py-2 border border-gray-300 rounded-lg" />
                                     <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
                                         const t = (newItemTitle||'').trim(); if (!t) return;
                                         if (newItemType==='task') { addTaskForDay(selectedDayStr, t, newTaskRecurrence, newTaskType); }
-                                        else { addEventForDay(selectedDayStr, t); }
+                                        else { addEventForDay(selectedDayStr, t, newEventType); }
                                         setNewItemTitle('');
                                         setNewTaskRecurrence('none');
                                         setNewTaskType('personal');
+                                        setNewEventType('work');
                                     }}>Add</button>
                                 </div>
                                 </div>
@@ -603,7 +704,7 @@ export default function App() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div className="space-y-2">
                                     <div className="text-sm font-semibold text-gray-700">Tasks</div>
-                                    {tasks.filter(t=> occursOnDay(t, parseYmd(selectedDayStr))).map((t)=>{
+                                    {tasks.filter(t=> occursOnDay(t, parseYmd(selectedDayStr)) && appliesOwnerFilter(t.owner)).map((t)=>{
                                         const checked = isTaskDoneOnDate(t, selectedDayStr);
                                         const isEditing = editingTaskId === t.id;
                                         return (
@@ -662,7 +763,7 @@ export default function App() {
                                 </div>
                                 <div className="space-y-2">
                                     <div className="text-sm font-semibold text-gray-700">Events</div>
-                                    {events.filter(e=> e.date===selectedDayStr).map((e)=>{
+                                    {events.filter(e=> e.date===selectedDayStr && appliesOwnerFilter(e.owner)).map((e)=>{
                                         const isEditing = editingEventId === e.id;
                                         return (
                                             <div key={e.id} className="w-full text-[12px] rounded-lg shadow px-2 py-2" style={{ backgroundColor: '#E6E6FA' }}>
@@ -706,7 +807,7 @@ export default function App() {
 
                 {/* Groceries Tab */}
                 {activeTab === 'groceries' && (
-                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-6">
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
                     <div className="flex items-center gap-3">
                         <div className={`text-sm font-semibold px-3 py-1 rounded cursor-pointer ${groceriesSubtab==='list' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`} onClick={()=>setGroceriesSubtab('list')}>List</div>
                         <div className={`text-sm font-semibold px-3 py-1 rounded cursor-pointer ${groceriesSubtab==='planner' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`} onClick={()=>setGroceriesSubtab('planner')}>Meal Planner</div>
@@ -752,6 +853,29 @@ export default function App() {
                                     <div className="md:col-span-1" />
                                 </div>
                                 <textarea value={mealRecipe} onChange={(e)=>setMealRecipe(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Recipe notes (optional)" />
+                                <div className="flex items-center gap-2 text-xs">
+                                    <input type="file" accept="image/*,.pdf,.txt,.md" onChange={async (e)=>{
+                                        const file = e.target.files && e.target.files[0];
+                                        if (!file) return;
+                                        try {
+                                            const reader = new FileReader();
+                                            reader.onload = async () => {
+                                                const dataUrl = reader.result;
+                                                const resp = await fetch('/api/upload', {
+                                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ dataUrl, filename: file.name, scope: 'recipe' })
+                                                });
+                                                const json = await resp.json();
+                                                if (!resp.ok) throw new Error(json?.error || 'Upload failed');
+                                                setMealFileUrl(json.url);
+                                            };
+                                            reader.readAsDataURL(file);
+                                        } catch (err) {
+                                            setRemoteError(err?.message || 'Upload failed');
+                                        }
+                                    }} className="text-xs" />
+                                    {mealFileUrl && <a href={mealFileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 border rounded"><Upload size={12}/>View file</a>}
+                                </div>
                                         <div className="space-y-2">
                                     <div className="text-xs font-semibold text-gray-600">Ingredients</div>
                                     {(mealIngredients||[]).map((ing)=> (
@@ -773,8 +897,8 @@ export default function App() {
                                     <button className="text-xs bg-blue-600 text-white rounded px-3 py-1" onClick={()=>{
                                         const t = mealTitle.trim(); if (!t) return;
                                         const id = generateId();
-                                        setMeals((prev)=> [...prev, { id, title: t, recipe: mealRecipe.trim(), link: mealLink.trim(), ingredients: mealIngredients }]);
-                                        setMealTitle(''); setMealRecipe(''); setMealLink(''); setMealIngredients([]);
+                                        setMeals((prev)=> [...prev, { id, title: t, recipe: mealRecipe.trim(), link: mealLink.trim(), ingredients: mealIngredients, fileUrl: mealFileUrl, owner: currentUser || 'Nick' }]);
+                                        setMealTitle(''); setMealRecipe(''); setMealLink(''); setMealIngredients([]); setMealFileUrl('');
                                     }}>Save Meal</button>
                                 </div>
                                                     </div>
@@ -812,7 +936,7 @@ export default function App() {
                                             if (!mealId) return;
                                             const meal = meals.find(m=>m.id===mealId); if (!meal) return;
                                             // create event
-                                            setEvents((prev)=> [...prev, { id: generateId(), title: meal.title, date: ymd, notes: meal.link ? `Recipe: ${meal.link}\n` + (meal.recipe||'') : (meal.recipe||'') }]);
+                                            setEvents((prev)=> [...prev, { id: generateId(), title: meal.title, date: ymd, notes: meal.link ? `Recipe: ${meal.link}\n` + (meal.recipe||'') : (meal.recipe||'') , type: 'personal', owner: currentUser || 'Nick' }]);
                                             // add ingredients
                                             (meal.ingredients||[]).forEach((ing)=>{
                                                 addedGroceries.push({ id: generateId(), name: ing.name, quantity: ing.quantity||'', checked: false });
@@ -829,10 +953,48 @@ export default function App() {
                 </div>
                 )}
 
+                {/* Home Mode: Chores, Fiance Requests (alias), Groceries, Meal planner quick links */}
+                {mode === 'home' && activeTab !== 'groceries' && activeTab !== 'requests' && activeTab !== 'calendar' && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-4">
+                    <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Home</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">Chores Today</div>
+                            {tasks.filter(t=> (t.type||'personal')==='personal' && occursOnDay(t, new Date()) && appliesOwnerFilter(t.owner)).map((t)=>{
+                                const todayStr = formatDate(new Date());
+                                const checked = isTaskDoneOnDate(t, todayStr);
+                                return (
+                                    <label key={`home-${t.id}`} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-2 py-2 text-xs">
+                                        <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, todayStr)} />
+                                        <span className={checked ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
+                                        <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={12} /></button>
+                                    </label>
+                                );
+                            })}
+                            {tasks.filter(t=> (t.type||'personal')==='personal' && occursOnDay(t, new Date()) && appliesOwnerFilter(t.owner)).length===0 && (
+                                <div className="text-xs text-gray-500">No chores for today.</div>
+                            )}
+                        </div>
+                        <div className="space-y-2">
+                            <div className="text-sm font-semibold text-gray-700 dark:text-gray-200">From Fiancé</div>
+                            {requests.filter(r=> appliesOwnerFilter(r.owner) && r.status==='pending').map((r)=> (
+                                <div key={`home-r-${r.id}`} className="rounded px-3 py-2 text-sm" style={{ backgroundColor: '#ffd6e7', border: '1px solid #f5a6bd' }}>
+                                    <div className="font-semibold text-[#7a2946]">{r.title}</div>
+                                    <div className="text-xs text-[#7a2946]">Priority: <span className="capitalize">{r.priority}</span></div>
+                                </div>
+                            ))}
+                            {requests.filter(r=> appliesOwnerFilter(r.owner) && r.status==='pending').length===0 && (
+                                <div className="text-xs text-gray-500">No requests.</div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+                )}
+
                 {/* Requests Tab */}
                 {activeTab === 'requests' && (
-                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-6">
-                    <div className="text-xl font-bold text-gray-800">Fiancé Requests</div>
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
+                    <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Fiancé Requests</div>
                     <div className="text-xs text-gray-500">Add, approve, or complete requests. Approved requests appear on the calendar (light pink) on their approved date.</div>
                     <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                         <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
@@ -857,14 +1019,14 @@ export default function App() {
                                     approvedDueDate: null,
                                     status: 'pending',
                                 };
-                                setRequests((prev)=>[...prev, payload]);
+                                setRequests((prev)=>[...prev, { ...payload, owner: currentUser || 'Nick' }]);
                                 setReqFormTitle(''); setReqFormDetails(''); setReqFormDueDate(''); setReqFormPriority('medium');
                             }}>Add</button>
                         </div>
                     </div>
                     <div className="grid grid-cols-1 gap-2">
                         {requests.length === 0 && <div className="text-xs text-gray-500">No requests.</div>}
-                        {requests.sort((a,b)=>{
+                        {requests.filter(r=> appliesOwnerFilter(r.owner)).sort((a,b)=>{
                             const pri = { high: 0, medium: 1, low: 2 };
                             return pri[a.priority]-pri[b.priority];
                         }).map((r)=>(
@@ -891,18 +1053,81 @@ export default function App() {
 
                 {/* Work Tab */}
                 {activeTab === 'work' && (
-                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-4">
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-4">
                     <div className="flex items-center gap-2">
                         <Briefcase size={18} />
-                        <div className="text-xl font-bold text-gray-800">Work — Today</div>
+                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Work — Today</div>
                         <div className="ml-auto text-xs text-gray-500">{formatDate(new Date())}</div>
                     </div>
+                    {/* Boss requests input */}
+                    <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
+                        <div className="text-sm font-semibold text-amber-800">Boss Requests</div>
+                        <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                            <input value={bossReqTitle} onChange={(e)=>setBossReqTitle(e.target.value)} placeholder="Title" className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                            <select value={bossReqPriority} onChange={(e)=>setBossReqPriority(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm">
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                            </select>
+                            <input type="date" value={bossReqDueDate} onChange={(e)=>setBossReqDueDate(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                            <input value={bossReqDetails} onChange={(e)=>setBossReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
+                            <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={()=>{
+                                if (!bossReqTitle.trim()) return;
+                                handleAddRequest(bossReqDueDate || formatDate(new Date()), bossReqTitle, bossReqPriority, bossReqDetails, 'boss');
+                                setBossReqTitle(''); setBossReqPriority('medium'); setBossReqDueDate(''); setBossReqDetails('');
+                            }}>Add</button>
+                    </div>
                     <div className="space-y-2">
-                        {tasks.filter(t=> (t.type||'personal')==='work' && occursOnDay(t, new Date()) ).length===0 && (
+                            {requests.filter(r=> r.source==='boss' && appliesOwnerFilter(r.owner)).map((r)=>(
+                                <div key={`boss-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-amber-200">
+                                    <div>
+                                        <div className="font-semibold text-gray-800">{r.title}</div>
+                                        <div className="text-[11px] text-gray-600 capitalize">{r.priority}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {r.status==='pending' && <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>}
+                                        {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>completeRequest(r.id)}>Done</button>}
+                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={12}/></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    {/* Quick upload for work files */}
+                    <div className="flex items-center gap-2 text-xs">
+                        <label className="px-2 py-1 bg-gray-100 border rounded cursor-pointer inline-flex items-center gap-1">
+                            <Upload size={12} /> Upload file
+                            <input type="file" className="hidden" onChange={async (e)=>{
+                                const file = e.target.files && e.target.files[0];
+                                if (!file) return;
+                                try {
+                                    const reader = new FileReader();
+                                    reader.onload = async () => {
+                                        const dataUrl = reader.result;
+                                        const resp = await fetch('/api/upload', {
+                                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ dataUrl, filename: file.name, scope: 'work' })
+                                        });
+                                        const json = await resp.json();
+                                        if (!resp.ok) throw new Error(json?.error || 'Upload failed');
+                                        const fileEntry = { id: generateId(), title: file.name, url: json.url, owner: currentUser || 'Nick', uploadedAt: new Date().toISOString() };
+                                        setWorkFiles((prev)=> [...prev, fileEntry]);
+                                        setInfoMessage('File uploaded');
+                                    };
+                                    reader.readAsDataURL(file);
+                                } catch (err) {
+                                    setRemoteError(err?.message || 'Upload failed');
+                                }
+                            }} />
+                        </label>
+                        {workFiles.length>0 && <span className="text-gray-600">{workFiles.length} file(s)</span>}
+                    </div>
+                    <div className="space-y-2">
+                        {tasks.filter(t=> (t.type||'personal')==='work' && occursOnDay(t, new Date()) && appliesOwnerFilter(t.owner) ).length===0 && (
                             <div className="text-xs text-gray-500">No work tasks for today.</div>
                         )}
                         {tasks
-                            .filter(t=> (t.type||'personal')==='work' && occursOnDay(t, new Date()))
+                            .filter(t=> (t.type||'personal')==='work' && occursOnDay(t, new Date()) && appliesOwnerFilter(t.owner))
                             .sort((a,b)=> (a.priority||3) - (b.priority||3))
                             .map((t)=>{
                             const todayStr = formatDate(new Date());
