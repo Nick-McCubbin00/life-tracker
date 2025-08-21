@@ -25,23 +25,12 @@ export default function App() {
     const infoTimerRef = useRef(null);
 
     // Auth / User & global filters
-    const [currentUser, setCurrentUser] = useState(() => {
-        try { return localStorage.getItem('currentUser') || null; } catch (_) { return null; }
-    });
+    const [currentUser, setCurrentUser] = useState(null);
     const [ownerFilter, setOwnerFilter] = useState('all'); // 'all' | 'Nick' | 'MP'
     const [mode, setMode] = useState('work'); // 'work' | 'home'
-    const [theme, setTheme] = useState(() => {
-        try { return localStorage.getItem('theme') || 'light'; } catch (_) { return 'light'; }
-    });
+    const [theme, setTheme] = useState('light');
     const [calendarTypeFilter, setCalendarTypeFilter] = useState('work'); // 'work' | 'home' | 'all'
-    const [calendarVisibility, setCalendarVisibility] = useState(() => {
-        // visibility toggles for calendar: { Nick: { work: true, personal: true }, MP: { work: true, personal: true } }
-        try {
-            const saved = JSON.parse(localStorage.getItem('calendarVisibility')||'null');
-            if (saved && typeof saved==='object') return saved;
-        } catch(_) {}
-        return { Nick: { work: true, personal: true }, MP: { work: true, personal: true } };
-    });
+    const [calendarVisibility, setCalendarVisibility] = useState({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } });
 
     // Collections
     const [tasks, setTasks] = useState([]);      // {id, title, date(YYYY-MM-DD), done, recurrence}
@@ -116,6 +105,25 @@ export default function App() {
     // Work files
     const [workFiles, setWorkFiles] = useState([]); // {id,title,url,owner,uploadedAt}
 
+    // Google Calendar integration state
+    const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '';
+    const [googleAccessToken, setGoogleAccessToken] = useState(null);
+    const [googleTokenExpiresAt, setGoogleTokenExpiresAt] = useState(null);
+    const [googleAuthorized, setGoogleAuthorized] = useState(false);
+    const [googleCalendars, setGoogleCalendars] = useState([]); // {id, summary, primary}
+    const [googleWorkCalendarId, setGoogleWorkCalendarId] = useState(() => {
+        try { return localStorage.getItem('googleWorkCalendarId') || ''; } catch (_) { return ''; }
+    });
+    const [googleHomeCalendarId, setGoogleHomeCalendarId] = useState(() => {
+        try { return localStorage.getItem('googleHomeCalendarId') || ''; } catch (_) { return ''; }
+    });
+    const [googleSyncBusy, setGoogleSyncBusy] = useState(false);
+    const isSyncingFromGoogleRef = useRef(false);
+
+    // Persist selected calendar choices
+    useEffect(() => {}, [googleWorkCalendarId]);
+    useEffect(() => {}, [googleHomeCalendarId]);
+
     // Sync mode to active tab
     useEffect(() => {
         setActiveTab(mode === 'work' ? 'work' : 'home');
@@ -127,105 +135,250 @@ export default function App() {
 
     // Sync theme with document root
     useEffect(() => {
-        try { localStorage.setItem('theme', theme); } catch (_) {}
         const root = document.documentElement;
         if (theme === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
     }, [theme]);
 
-    useEffect(() => {
-        try { localStorage.setItem('calendarVisibility', JSON.stringify(calendarVisibility)); } catch (_) {}
-    }, [calendarVisibility]);
+    useEffect(() => {}, [calendarVisibility]);
 
     useEffect(() => {
         // default calendar filter according to mode
         setCalendarTypeFilter(mode==='work' ? 'work' : 'home');
     }, [mode]);
 
-    // Persist currentUser
-    useEffect(() => {
-        try { if (currentUser) localStorage.setItem('currentUser', currentUser); else localStorage.removeItem('currentUser'); } catch (_) {}
-    }, [currentUser]);
+    useEffect(() => {}, [currentUser]);
 
-    // Load state from Blob first (awaited), prefer freshest between Blob and localStorage using savedAt
-    useEffect(() => {
-        (async () => {
-            const readLocal = () => {
-                const out = {};
-                try { out.tasks = JSON.parse(localStorage.getItem('tasks')||'null') || undefined; } catch (_) {}
-                try { out.groceries = JSON.parse(localStorage.getItem('groceries')||'null') || undefined; } catch (_) {}
-                try { out.requests = JSON.parse(localStorage.getItem('requests')||'null') || undefined; } catch (_) {}
-                try { out.events = JSON.parse(localStorage.getItem('events')||'null') || undefined; } catch (_) {}
-                try { out.meals = JSON.parse(localStorage.getItem('meals')||'null') || undefined; } catch (_) {}
-                try { out.workFiles = JSON.parse(localStorage.getItem('workFiles')||'null') || undefined; } catch (_) {}
-                try { out.savedAt = localStorage.getItem('savedAt') || null; } catch (_) {}
-                return out;
+    useEffect(() => {}, []);
+
+    const addDaysToYmd = (ymd, days) => {
+        if (!ymd) return ymd;
+        const [y, m, d] = ymd.split('-').map((x) => Number(x));
+        const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+        dt.setUTCDate(dt.getUTCDate() + (days || 0));
+        const yyyy = dt.getUTCFullYear();
+        const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getUTCDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const ensureGoogleToken = async () => {
+        if (!GOOGLE_CLIENT_ID) {
+            setRemoteError('Missing REACT_APP_GOOGLE_CLIENT_ID env var for Google Calendar.');
+            throw new Error('Missing Google Client ID');
+        }
+        if (googleAccessToken && googleTokenExpiresAt && Date.now() < googleTokenExpiresAt - 30_000) {
+            return googleAccessToken;
+        }
+        // Request a new access token using Google Identity Services
+        await new Promise((resolve, reject) => {
+            try {
+                const tokenClient = window.google?.accounts?.oauth2?.initTokenClient({
+                    client_id: GOOGLE_CLIENT_ID,
+                    scope: 'https://www.googleapis.com/auth/calendar',
+                    callback: (resp) => {
+                        if (resp && resp.access_token) {
+                            const expiresInSec = Number(resp.expires_in || 3600);
+                            const expAt = Date.now() + expiresInSec * 1000;
+                            setGoogleAccessToken(resp.access_token);
+                            setGoogleTokenExpiresAt(expAt);
+                            setGoogleAuthorized(true);
+                            try { localStorage.setItem('googleAccessToken', resp.access_token); } catch (_) {}
+                            try { localStorage.setItem('googleTokenExpiresAt', String(expAt)); } catch (_) {}
+                            resolve();
+                        } else {
+                            reject(new Error('Failed to authorize with Google'));
+                        }
+                    },
+                });
+                tokenClient.requestAccessToken({ prompt: googleAuthorized ? '' : 'consent' });
+            } catch (e) {
+                reject(e);
+            }
+        });
+        return googleAccessToken;
+    };
+
+    const googleApiFetch = async (path, options = {}) => {
+        const token = await ensureGoogleToken();
+        const url = `https://www.googleapis.com/calendar/v3${path}`;
+        const resp = await fetch(url, {
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+                ...(options.headers || {}),
+            },
+        });
+        if (!resp.ok) {
+            const text = await resp.text().catch(() => '');
+            throw new Error(text || `Google API error ${resp.status}`);
+        }
+        return resp.json();
+    };
+
+    const listGoogleCalendars = async () => {
+        try {
+            setGoogleSyncBusy(true);
+            const json = await googleApiFetch('/users/me/calendarList');
+            const items = Array.isArray(json?.items) ? json.items : [];
+            const mapped = items.map((c) => ({ id: c.id, summary: c.summary, primary: !!c.primary }));
+            setGoogleCalendars(mapped);
+        } catch (e) {
+            setRemoteError(e?.message || 'Failed to list Google calendars');
+        } finally {
+            setGoogleSyncBusy(false);
+        }
+    };
+
+    const importFromGoogle = async () => {
+        if (!googleWorkCalendarId && !googleHomeCalendarId) return;
+        try {
+            setGoogleSyncBusy(true);
+            isSyncingFromGoogleRef.current = true;
+            const timeMin = new Date();
+            timeMin.setUTCFullYear(timeMin.getUTCFullYear() - 1);
+            const timeMax = new Date();
+            timeMax.setUTCFullYear(timeMax.getUTCFullYear() + 1);
+            const isoMin = timeMin.toISOString();
+            const isoMax = timeMax.toISOString();
+
+            const fetchEvents = async (calendarId, typeLabel) => {
+                if (!calendarId) return [];
+                const q = new URLSearchParams({
+                    singleEvents: 'true',
+                    orderBy: 'startTime',
+                    timeMin: isoMin,
+                    timeMax: isoMax,
+                    maxResults: '2500',
+                }).toString();
+                const json = await googleApiFetch(`/calendars/${encodeURIComponent(calendarId)}/events?${q}`);
+                const items = Array.isArray(json?.items) ? json.items : [];
+                return items
+                    .filter((ev) => ev?.status !== 'cancelled')
+                    .map((ev) => {
+                        const start = ev.start?.date || ev.start?.dateTime;
+                        const ymd = ev.start?.date ? ev.start.date : formatDate(ev.start?.dateTime || ev.start);
+                        return {
+                            googleEventId: ev.id,
+                            googleCalendarId: calendarId,
+                            title: ev.summary || '(no title)',
+                            date: ymd,
+                            notes: ev.description || '',
+                            type: typeLabel,
+                        };
+                    });
             };
 
+            const [workItems, homeItems] = await Promise.all([
+                fetchEvents(googleWorkCalendarId, 'work'),
+                fetchEvents(googleHomeCalendarId, 'personal'),
+            ]);
+            const incoming = [...workItems, ...homeItems];
+            if (incoming.length === 0) return;
+
+            setEvents((prev) => {
+                const byGoogleId = new Map(prev.filter((e) => e.googleEventId).map((e) => [e.googleEventId, e]));
+                const next = [...prev];
+                incoming.forEach((inc) => {
+                    const existing = byGoogleId.get(inc.googleEventId);
+                    if (existing) {
+                        // Update fields if changed
+                        if (existing.title !== inc.title || existing.date !== inc.date || (existing.notes||'') !== (inc.notes||'')) {
+                            const idx = next.findIndex((x) => x.id === existing.id);
+                            if (idx >= 0) next[idx] = { ...existing, title: inc.title, date: inc.date, notes: inc.notes, type: inc.type, owner: existing.owner || (currentUser || 'Nick') };
+                        }
+                    } else {
+                        next.push({ id: generateId(), title: inc.title, date: inc.date, notes: inc.notes, type: inc.type, owner: currentUser || 'Nick', googleEventId: inc.googleEventId, googleCalendarId: inc.googleCalendarId });
+                    }
+                });
+                return next;
+            });
+        } catch (e) {
+            setRemoteError(e?.message || 'Failed to import from Google');
+        } finally {
+            isSyncingFromGoogleRef.current = false;
+            setGoogleSyncBusy(false);
+        }
+    };
+
+    const exportToGoogle = async () => {
+        try {
+            setGoogleSyncBusy(true);
+            await ensureGoogleToken();
+            const all = Array.isArray(events) ? events : [];
+            const targetable = all.filter((e) => (e.type === 'work' ? !!googleWorkCalendarId : e.type === 'personal' ? !!googleHomeCalendarId : false));
+
+            for (const ev of targetable) {
+                const calendarId = ev.type === 'work' ? googleWorkCalendarId : googleHomeCalendarId;
+                const resource = {
+                    summary: ev.title || '',
+                    description: ev.notes || '',
+                    start: { date: ev.date },
+                    end: { date: addDaysToYmd(ev.date, 1) },
+                };
+                try {
+                    if (ev.googleEventId && ev.googleCalendarId === calendarId) {
+                        await googleApiFetch(`/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(ev.googleEventId)}`, {
+                            method: 'PATCH',
+                            body: JSON.stringify(resource),
+                        });
+                    } else if (!ev.googleEventId) {
+                        const created = await googleApiFetch(`/calendars/${encodeURIComponent(calendarId)}/events`, {
+                            method: 'POST',
+                            body: JSON.stringify(resource),
+                        });
+                        const newGoogleId = created?.id;
+                        if (newGoogleId) {
+                            setEvents((prev) => prev.map((x) => (x.id === ev.id ? { ...x, googleEventId: newGoogleId, googleCalendarId: calendarId } : x)));
+                        }
+                    } else if (ev.googleEventId && ev.googleCalendarId && ev.googleCalendarId !== calendarId) {
+                        // Move between calendars: delete then create
+                        try {
+                            await googleApiFetch(`/calendars/${encodeURIComponent(ev.googleCalendarId)}/events/${encodeURIComponent(ev.googleEventId)}`, { method: 'DELETE' });
+                        } catch (_) {}
+                        const created = await googleApiFetch(`/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body: JSON.stringify(resource) });
+                        const newGoogleId = created?.id;
+                        if (newGoogleId) {
+                            setEvents((prev) => prev.map((x) => (x.id === ev.id ? { ...x, googleEventId: newGoogleId, googleCalendarId: calendarId } : x)));
+                        }
+                    }
+                } catch (err) {
+                    // Continue with others, but surface one error
+                    setRemoteError(err?.message || 'Failed to sync some events to Google');
+                }
+            }
+        } catch (e) {
+            setRemoteError(e?.message || 'Failed to export to Google');
+        } finally {
+            setGoogleSyncBusy(false);
+        }
+    };
+
+    // Load state from Blob
+    useEffect(() => {
+        (async () => {
             try {
                 const resp = await fetch('/api/state');
-                if (resp.ok) {
-                    const json = await resp.json();
-                    const d = json?.data || {};
-                    // Enable Blob persistence
-                    setUsingBlob(true);
-
-                    const arrays = {
-                        events: Array.isArray(d.events) ? d.events : undefined,
-                        tasks: Array.isArray(d.tasks) ? d.tasks : undefined,
-                        groceries: Array.isArray(d.groceries) ? d.groceries : undefined,
-                        requests: Array.isArray(d.requests) ? d.requests : undefined,
-                        meals: Array.isArray(d.meals) ? d.meals : undefined,
-                        workFiles: Array.isArray(d.workFiles) ? d.workFiles : undefined,
-                    };
-                    const hasAnyItems = Object.values(arrays).some((v) => Array.isArray(v) && v.length > 0);
-                    const local = readLocal();
-                    const blobSavedAt = Date.parse(d?.savedAt || '');
-                    const localSavedAt = Date.parse(local?.savedAt || '');
-                    const preferLocal = localSavedAt && (!blobSavedAt || localSavedAt > blobSavedAt);
-
-                    if (!hasAnyItems || preferLocal) {
-                        if (Array.isArray(local.events)) setEvents(local.events);
-                        if (Array.isArray(local.tasks)) setTasks(local.tasks);
-                        if (Array.isArray(local.groceries)) setGroceries(local.groceries);
-                        if (Array.isArray(local.requests)) setRequests(local.requests);
-                        if (Array.isArray(local.meals)) setMeals(local.meals);
-                        if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
-                    } else {
-                        if (arrays.events) setEvents(arrays.events);
-                        if (arrays.tasks) setTasks(arrays.tasks);
-                        if (arrays.groceries) setGroceries(arrays.groceries);
-                        if (arrays.requests) setRequests(arrays.requests);
-                        if (arrays.meals) setMeals(arrays.meals);
-                        if (arrays.workFiles) setWorkFiles(arrays.workFiles);
-                    }
-                } else {
-                    setUsingBlob(false);
-                    const local = readLocal();
-                    if (Array.isArray(local.events)) setEvents(local.events);
-                    if (Array.isArray(local.tasks)) setTasks(local.tasks);
-                    if (Array.isArray(local.groceries)) setGroceries(local.groceries);
-                    if (Array.isArray(local.requests)) setRequests(local.requests);
-                    if (Array.isArray(local.meals)) setMeals(local.meals);
-                    if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
-                }
-            } catch (_) {
-                setUsingBlob(false);
-                const local = readLocal();
-                if (Array.isArray(local.events)) setEvents(local.events);
-                if (Array.isArray(local.tasks)) setTasks(local.tasks);
-                if (Array.isArray(local.groceries)) setGroceries(local.groceries);
-                if (Array.isArray(local.requests)) setRequests(local.requests);
-                if (Array.isArray(local.meals)) setMeals(local.meals);
-                if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
+                if (!resp.ok) throw new Error('Failed to load state');
+                const json = await resp.json();
+                const d = json?.data || {};
+                setUsingBlob(true);
+                if (Array.isArray(d.events)) setEvents(d.events);
+                if (Array.isArray(d.tasks)) setTasks(d.tasks);
+                if (Array.isArray(d.groceries)) setGroceries(d.groceries);
+                if (Array.isArray(d.requests)) setRequests(d.requests);
+                if (Array.isArray(d.meals)) setMeals(d.meals);
+                if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
+            } catch (e) {
+                setRemoteError(e?.message || 'Failed to load state');
             }
         })();
     }, []);
 
-    // Persist to Blob (debounced) and localStorage as cache
+    // Persist to Blob (debounced)
     useEffect(() => {
         const save = setTimeout(async () => {
             const nowIso = new Date().toISOString();
-            try { localStorage.setItem('savedAt', nowIso); } catch (_) {}
             if (usingBlob) {
                 try {
                     await fetch('/api/state', {
@@ -242,20 +395,14 @@ export default function App() {
                         }),
                     });
                 } catch (_) {
-                    setUsingBlob(false);
+                    setRemoteError('Failed to save state');
                 }
             }
         }, 400);
         return () => clearTimeout(save);
     }, [events, tasks, groceries, requests, meals, workFiles, usingBlob]);
 
-    // Persist collections
-    useEffect(() => { try { localStorage.setItem('events', JSON.stringify(events)); } catch (_) {} }, [events]);
-    useEffect(() => { try { localStorage.setItem('tasks', JSON.stringify(tasks)); } catch (_) {} }, [tasks]);
-    useEffect(() => { try { localStorage.setItem('groceries', JSON.stringify(groceries)); } catch (_) {} }, [groceries]);
-    useEffect(() => { try { localStorage.setItem('requests', JSON.stringify(requests)); } catch (_) {} }, [requests]);
-    useEffect(() => { try { localStorage.setItem('meals', JSON.stringify(meals)); } catch (_) {} }, [meals]);
-    useEffect(() => { try { localStorage.setItem('workFiles', JSON.stringify(workFiles)); } catch (_) {} }, [workFiles]);
+    // Removed localStorage caching of collections to ensure cross-instance consistency
 
     // Memoized values for calendar generation to prevent recalculation on every render
     const { month, year, daysInMonth, firstDayOfMonth } = useMemo(() => {
@@ -344,8 +491,16 @@ export default function App() {
         const owner = currentUser || 'Nick';
         setEvents((prev) => [...prev, { id, title: trimmed, date: dayStr, notes: '', type, owner }]);
     };
-    const deleteEvent = (eventId) => {
+    const deleteEvent = async (eventId) => {
+        const target = (events || []).find((e) => e.id === eventId);
         setEvents((prev) => prev.filter((e) => e.id !== eventId));
+        if (target && target.googleEventId && target.googleCalendarId) {
+            try {
+                await googleApiFetch(`/calendars/${encodeURIComponent(target.googleCalendarId)}/events/${encodeURIComponent(target.googleEventId)}`, { method: 'DELETE' });
+            } catch (_) {
+                // Ignore failure; local deletion already applied
+            }
+        }
     };
 
     // Groceries
@@ -535,6 +690,28 @@ export default function App() {
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
                         <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Tasks</button>
                         <div className="ml-auto flex items-center gap-2">
+                            {/* Google Calendar controls */}
+                            <div className="flex items-center gap-2">
+                                {!googleAuthorized ? (
+                                    <button
+                                        onClick={async ()=>{ try { await ensureGoogleToken(); await listGoogleCalendars(); } catch(_){} }}
+                                        className="text-xs rounded px-2 py-1 bg-green-600 text-white hover:bg-green-700"
+                                    >Connect Google</button>
+                                ) : (
+                                    <>
+                                        <select value={googleWorkCalendarId} onChange={(e)=> setGoogleWorkCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                            <option value="">Work cal…</option>
+                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                        </select>
+                                        <select value={googleHomeCalendarId} onChange={(e)=> setGoogleHomeCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                            <option value="">Home cal…</option>
+                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                        </select>
+                                        <button onClick={importFromGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Import'}</button>
+                                        <button onClick={exportToGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Export'}</button>
+                                    </>
+                                )}
+                            </div>
                             <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
                                 <option value="all">All</option>
                                 <option value="Nick">Nick</option>
@@ -601,6 +778,28 @@ export default function App() {
                         <button onClick={() => setActiveTab('chores')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='chores' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>Chores</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
                         <div className="ml-auto flex items-center gap-2">
+                            {/* Google Calendar controls */}
+                            <div className="flex items-center gap-2">
+                                {!googleAuthorized ? (
+                                    <button
+                                        onClick={async ()=>{ try { await ensureGoogleToken(); await listGoogleCalendars(); } catch(_){} }}
+                                        className="text-xs rounded px-2 py-1 bg-green-600 text-white hover:bg-green-700"
+                                    >Connect Google</button>
+                                ) : (
+                                    <>
+                                        <select value={googleWorkCalendarId} onChange={(e)=> setGoogleWorkCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                            <option value="">Work cal…</option>
+                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                        </select>
+                                        <select value={googleHomeCalendarId} onChange={(e)=> setGoogleHomeCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                            <option value="">Home cal…</option>
+                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                        </select>
+                                        <button onClick={importFromGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Import'}</button>
+                                        <button onClick={exportToGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Export'}</button>
+                                    </>
+                                )}
+                            </div>
                             <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
                                 <option value="all">All</option>
                                 <option value="Nick">Nick</option>
