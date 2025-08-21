@@ -38,6 +38,7 @@ export default function App() {
     const [groceries, setGroceries] = useState([]); // {id, name, quantity, checked}
     const [requests, setRequests] = useState([]);   // {id, title, details, priority, requestedDueDate, approved, approvedDueDate, status}
     const [afterWorkPlans, setAfterWorkPlans] = useState([]); // {id, date(YYYY-MM-DD), title, start(HH:MM), end(HH:MM)}
+    const [trips, setTrips] = useState([]); // {id, title, startDate, endDate, items:[{id,time,title,place:{placeId,name,address,location}}]}
 
     // Inputs (day modal)
     const [newItemType, setNewItemType] = useState('task'); // 'task' | 'event'
@@ -111,6 +112,17 @@ export default function App() {
     const [awpTitle, setAwpTitle] = useState('');
     const [awpStart, setAwpStart] = useState('16:00');
     const [awpEnd, setAwpEnd] = useState('17:00');
+
+    // Trip planner inputs
+    const [tripTitle, setTripTitle] = useState('');
+    const [tripStart, setTripStart] = useState('');
+    const [tripEnd, setTripEnd] = useState('');
+    const [activeTripId, setActiveTripId] = useState(null);
+    const [tripItemTitle, setTripItemTitle] = useState('');
+    const [tripItemTime, setTripItemTime] = useState('');
+    const [placeQuery, setPlaceQuery] = useState('');
+    const [placeResults, setPlaceResults] = useState([]);
+    const [selectedPlace, setSelectedPlace] = useState(null);
 
     // Google Calendar integration state
     const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '';
@@ -367,15 +379,16 @@ export default function App() {
             try {
                 const resp = await fetch('/api/state');
                 if (!resp.ok) throw new Error('Failed to load state');
-                const json = await resp.json();
-                const d = json?.data || {};
-                setUsingBlob(true);
+                    const json = await resp.json();
+                    const d = json?.data || {};
+                    setUsingBlob(true);
                 if (Array.isArray(d.events)) setEvents(d.events);
                 if (Array.isArray(d.tasks)) setTasks(d.tasks);
                 if (Array.isArray(d.groceries)) setGroceries(d.groceries);
                 if (Array.isArray(d.requests)) setRequests(d.requests);
                 if (Array.isArray(d.meals)) setMeals(d.meals);
                 if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
+                if (Array.isArray(d.trips)) setTrips(d.trips);
                 if (Array.isArray(d.afterWorkPlans)) setAfterWorkPlans(d.afterWorkPlans);
             } catch (e) {
                 setRemoteError(e?.message || 'Failed to load state');
@@ -399,6 +412,7 @@ export default function App() {
                             requests,
                             meals,
                             workFiles,
+                            trips,
                             afterWorkPlans,
                             savedAt: nowIso,
                         }),
@@ -409,7 +423,7 @@ export default function App() {
             }
         }, 400);
         return () => clearTimeout(save);
-    }, [events, tasks, groceries, requests, meals, workFiles, afterWorkPlans, usingBlob]);
+    }, [events, tasks, groceries, requests, meals, workFiles, trips, afterWorkPlans, usingBlob]);
 
     // Removed localStorage caching of collections to ensure cross-instance consistency
 
@@ -820,6 +834,7 @@ export default function App() {
                         <button onClick={() => setActiveTab('groceries')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='groceries' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ShoppingCart size={16} /> Groceries</button>
                         <button onClick={() => setActiveTab('chores')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='chores' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>Chores</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
+                        <button onClick={() => setActiveTab('trip')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='trip' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Clipboard size={16} /> Trip planner</button>
                         <div className="ml-auto flex items-center gap-2">
                             {/* Google Calendar controls */}
                             <div className="flex items-center gap-2">
@@ -1094,61 +1109,61 @@ export default function App() {
                                                     );
                                                 })}
                                                 {todayList.map((t)=>{
-                                                    const checked = isTaskDoneOnDate(t, selectedDayStr);
-                                                    const isEditing = editingTaskId === t.id;
-                                                    return (
-                                                        <div key={t.id} className="rounded p-2 text-xs" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FEF3C7' : '#EFF6FF', border: '1px solid ' + ((t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE') }}>
-                                                            {!isEditing ? (
-                                                                <div className="flex items-start gap-2">
-                                                                    <input type="checkbox" className="mt-0.5" checked={checked} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
-                                                                    <div className="min-w-0">
-                                                                        <div className={checked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={t.title}>{t.title}</div>
-                                                                        {t.notes && <div className="text-[11px] text-gray-600 truncate" title={t.notes}>{t.notes}</div>}
-                                                                        <div className="flex items-center gap-2 text-[10px]">
-                                                                            {t.recurrence && t.recurrence!=='none' && <span className="text-blue-700">({t.recurrence})</span>}
-                                                                            <span className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FDE68A' : '#DBEAFE', borderColor: (t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE', color: '#374151' }}>{(t.type||'personal')==='work' ? 'Work' : 'Personal'}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="ml-auto flex items-center gap-2">
-                                                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>{ setEditingTaskId(t.id); setEditTaskTitle(t.title); setEditTaskNotes(t.notes||''); }} title="Edit">✎</button>
-                                                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)} title="Delete"><Trash2 size={12}/></button>
-                                                                    </div>
-                                                                </div>
-                                                            ) : (
-                                                                <div className="space-y-2">
-                                                                    <input value={editTaskTitle} onChange={(e)=>setEditTaskTitle(e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Task title" />
-                                                                    <textarea value={editTaskNotes} onChange={(e)=>setEditTaskNotes(e.target.value)} rows={2} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Notes (optional)" />
-                                                                    <div className="flex items-center gap-2">
-                                                                        <label className="text-[11px] text-gray-700">Repeat</label>
-                                                                        <select value={t.recurrence||'none'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, recurrence: e.target.value } : x))} className="px-2 py-1 border border-blue-200 rounded text-xs">
-                                                                            <option value="none">One-time</option>
-                                                                            <option value="daily">Daily</option>
-                                                                            <option value="weekly">Weekly</option>
-                                                                            <option value="biweekly">Biweekly</option>
-                                                                            <option value="monthly">Monthly</option>
-                                                                        </select>
-                                                                        <label className="text-[11px] text-gray-700 ml-2">Type</label>
-                                                                        <select value={t.type||'personal'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, type: e.target.value } : x))} className="px-2 py-1 border border-blue-200 rounded text-xs">
-                                                                            <option value="personal">Personal</option>
-                                                                            <option value="work">Work</option>
-                                                                        </select>
-                                                                        <div className="ml-auto flex items-center gap-2">
-                                                                            <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>{
-                                                                                const title = editTaskTitle.trim(); if (!title) return;
-                                                                                setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, title, notes: editTaskNotes } : x));
-                                                                                setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes('');
-                                                                            }}>Save</button>
-                                                                            <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes(''); }}>Cancel</button>
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            )}
+                                        const checked = isTaskDoneOnDate(t, selectedDayStr);
+                                        const isEditing = editingTaskId === t.id;
+                                        return (
+                                            <div key={t.id} className="rounded p-2 text-xs" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FEF3C7' : '#EFF6FF', border: '1px solid ' + ((t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE') }}>
+                                                {!isEditing ? (
+                                                    <div className="flex items-start gap-2">
+                                                        <input type="checkbox" className="mt-0.5" checked={checked} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
+                                                        <div className="min-w-0">
+                                                            <div className={checked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={t.title}>{t.title}</div>
+                                                            {t.notes && <div className="text-[11px] text-gray-600 truncate" title={t.notes}>{t.notes}</div>}
+                                                            <div className="flex items-center gap-2 text-[10px]">
+                                                                {t.recurrence && t.recurrence!=='none' && <span className="text-blue-700">({t.recurrence})</span>}
+                                                                <span className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FDE68A' : '#DBEAFE', borderColor: (t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE', color: '#374151' }}>{(t.type||'personal')==='work' ? 'Work' : 'Personal'}</span>
+                                                            </div>
                                                         </div>
-                                                    );
-                                                })}
-                                                {occ.length===0 && (
-                                                    <div className="text-xs text-gray-500">No tasks for this day.</div>
+                                                        <div className="ml-auto flex items-center gap-2">
+                                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>{ setEditingTaskId(t.id); setEditTaskTitle(t.title); setEditTaskNotes(t.notes||''); }} title="Edit">✎</button>
+                                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)} title="Delete"><Trash2 size={12}/></button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-2">
+                                                        <input value={editTaskTitle} onChange={(e)=>setEditTaskTitle(e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Task title" />
+                                                        <textarea value={editTaskNotes} onChange={(e)=>setEditTaskNotes(e.target.value)} rows={2} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Notes (optional)" />
+                                                        <div className="flex items-center gap-2">
+                                                            <label className="text-[11px] text-gray-700">Repeat</label>
+                                                            <select value={t.recurrence||'none'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, recurrence: e.target.value } : x))} className="px-2 py-1 border border-blue-200 rounded text-xs">
+                                                                <option value="none">One-time</option>
+                                                                <option value="daily">Daily</option>
+                                                                <option value="weekly">Weekly</option>
+                                                                <option value="biweekly">Biweekly</option>
+                                                                <option value="monthly">Monthly</option>
+                                                            </select>
+                                                            <label className="text-[11px] text-gray-700 ml-2">Type</label>
+                                                            <select value={t.type||'personal'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, type: e.target.value } : x))} className="px-2 py-1 border border-blue-200 rounded text-xs">
+                                                                <option value="personal">Personal</option>
+                                                                <option value="work">Work</option>
+                                                            </select>
+                                                            <div className="ml-auto flex items-center gap-2">
+                                                                <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>{
+                                                                    const title = editTaskTitle.trim(); if (!title) return;
+                                                                    setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, title, notes: editTaskNotes } : x));
+                                                                    setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes('');
+                                                                }}>Save</button>
+                                                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes(''); }}>Cancel</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
                                                 )}
+                                            </div>
+                                        );
+                                    })}
+                                                {occ.length===0 && (
+                                        <div className="text-xs text-gray-500">No tasks for this day.</div>
+                                    )}
                                             </>
                                         );
                                     })()}
@@ -1218,6 +1233,114 @@ export default function App() {
                         <button className="px-2 py-1 border rounded text-xs" onClick={()=> setCalendarVisibility({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } })}>All</button>
                         <button className="px-2 py-1 border rounded text-xs" onClick={()=> setCalendarVisibility({ Nick: { work: mode==='work', personal: mode==='home' }, MP: { work: mode==='work', personal: mode==='home' } })}>Mode</button>
                     </div>
+                </div>
+                )}
+
+                {/* Trip Planner (Home only) */}
+                {mode==='home' && activeTab === 'trip' && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
+                    <div className="flex items-center gap-3">
+                        <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">Trip planner</div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                        <input value={tripTitle} onChange={(e)=> setTripTitle(e.target.value)} placeholder="Trip name" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="date" value={tripStart} onChange={(e)=> setTripStart(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="date" value={tripEnd} onChange={(e)=> setTripEnd(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                        <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                            const title = (tripTitle||'').trim(); if (!title) return;
+                            const id = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+                            setTrips(prev => [...prev, { id, title, startDate: tripStart || null, endDate: tripEnd || null, items: [] }]);
+                            setActiveTripId(id);
+                            setTripTitle(''); setTripStart(''); setTripEnd('');
+                        }}>Create trip</button>
+                        <select value={activeTripId || ''} onChange={(e)=> setActiveTripId(e.target.value || null)} className="px-3 py-2 border border-gray-300 rounded-lg">
+                            <option value="">Select existing trip...</option>
+                            {trips.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+                        </select>
+                    </div>
+
+                    {activeTripId && (
+                    <div className="space-y-4">
+                        <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                            <div className="grid grid-cols-1 md:grid-cols-6 gap-2 items-center">
+                                <input value={tripItemTitle} onChange={(e)=> setTripItemTitle(e.target.value)} placeholder="Stop title (e.g. Museum)" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-lg" />
+                                <input type="time" value={tripItemTime} onChange={(e)=> setTripItemTime(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                                <div className="md:col-span-2">
+                                    <input value={placeQuery} onChange={async (e)=>{
+                                        const q = e.target.value; setPlaceQuery(q);
+                                        if (!q) { setPlaceResults([]); return; }
+                                        try {
+                                            const resp = await fetch('/api/google-places', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'autocomplete', input: q })});
+                                            const json = await resp.json();
+                                            setPlaceResults(Array.isArray(json?.predictions) ? json.predictions : []);
+                                        } catch(_) { setPlaceResults([]); }
+                                    }} placeholder="Search a place" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                    {placeResults.length>0 && (
+                                        <div className="mt-1 max-h-48 overflow-auto border border-gray-200 rounded-lg bg-white text-sm">
+                                            {placeResults.map((p)=> (
+                                                <div key={p.place_id} className="px-3 py-2 hover:bg-gray-50 cursor-pointer" onClick={async ()=>{
+                                                    setPlaceResults([]); setPlaceQuery(p.description);
+                                                    try {
+                                                        const resp = await fetch('/api/google-places', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'details', placeId: p.place_id })});
+                                                        const json = await resp.json();
+                                                        setSelectedPlace(json?.place || null);
+                                                    } catch(_) { setSelectedPlace(null); }
+                                                }}>{p.description}</div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                                    const title = (tripItemTitle||'').trim(); if (!title || !selectedPlace) return;
+                                    const tid = activeTripId;
+                                    const iid = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+                                    setTrips(prev => prev.map(t => t.id===tid ? { ...t, items: [...(t.items||[]), { id: iid, title, time: tripItemTime || null, place: selectedPlace }] } : t));
+                                    setTripItemTitle(''); setTripItemTime(''); setPlaceQuery(''); setSelectedPlace(null);
+                                }}>Add stop</button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                {(trips.find(t=> t.id===activeTripId)?.items || []).map((it)=> (
+                                    <div key={it.id} className="flex items-start gap-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">
+                                        <div className="text-xs font-semibold text-gray-600 w-24">{it.time || '--:--'}</div>
+                                        <div className="min-w-0">
+                                            <div className="text-sm text-gray-800 dark:text-gray-100 truncate">{it.title}</div>
+                                            {it.place && <div className="text-[11px] text-gray-600 truncate">{it.place.name} · {it.place.address}</div>}
+                                        </div>
+                                        <div className="ml-auto flex items-center gap-2">
+                                            <a className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" target="_blank" rel="noreferrer" href={it.place?.url || (it.place?.location ? `https://www.google.com/maps/search/?api=1&query=${it.place.location.lat},${it.place.location.lng}` : '#')}>Open in Maps</a>
+                                            <button className="text-xs bg-red-100 text-red-700 rounded px-2 py-1" onClick={()=> setTrips(prev => prev.map(t=> t.id===activeTripId ? { ...t, items: (t.items||[]).filter(x=> x.id!==it.id) } : t))}>Delete</button>
+                                        </div>
+                                    </div>
+                                ))}
+                                {(trips.find(t=> t.id===activeTripId)?.items || []).length===0 && (
+                                    <div className="text-xs text-gray-500">No stops yet. Add a place above.</div>
+                                )}
+                            </div>
+                            <div className="h-72 lg:h-96">
+                                {(() => {
+                                    const items = (trips.find(t=> t.id===activeTripId)?.items || []);
+                                    if (items.length < 2) return <div className="h-full flex items-center justify-center text-xs text-gray-500 border border-gray-200 rounded-lg">Add 2+ stops to view directions</div>;
+                                    const origin = items[0]?.place?.location;
+                                    const destination = items[items.length-1]?.place?.location;
+                                    const waypoints = items.slice(1, items.length-1).map(it => `${it.place.location.lat},${it.place.location.lng}`).join('|');
+                                    if (!origin || !destination) return <div className="h-full flex items-center justify-center text-xs text-gray-500 border border-gray-200 rounded-lg">Missing coordinates</div>;
+                                    const q = new URLSearchParams({
+                                        origin: `${origin.lat},${origin.lng}`,
+                                        destination: `${destination.lat},${destination.lng}`,
+                                        travelmode: 'driving',
+                                        waypoints,
+                                    }).toString();
+                                    const url = `https://www.google.com/maps/embed/v1/directions?key=${encodeURIComponent(process.env.REACT_APP_GOOGLE_MAPS_API_KEY || '')}&${q}`;
+                                    return <iframe title="Directions" className="w-full h-full rounded-lg border" loading="lazy" allowFullScreen referrerPolicy="no-referrer-when-downgrade" src={url} />;
+                                })()}
+                            </div>
+                        </div>
+                    </div>
+                    )}
                 </div>
                 )}
 
