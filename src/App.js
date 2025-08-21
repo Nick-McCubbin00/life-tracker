@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, CalendarDays, ShoppingCart, Star } from 'lucide-react';
+import { ChevronLeft, ChevronRight, AlertTriangle, X, Trash2, CalendarDays, ShoppingCart, Star, Briefcase, Clipboard, Sun, Moon, Upload, User } from 'lucide-react';
 
 // Helper to format date to 'YYYY-MM-DD'
 const formatDate = (date) => {
@@ -24,9 +24,28 @@ export default function App() {
     const [infoMessage, setInfoMessage] = useState('');
     const infoTimerRef = useRef(null);
 
+    // Auth / User & global filters
+    const [currentUser, setCurrentUser] = useState(() => {
+        try { return localStorage.getItem('currentUser') || null; } catch (_) { return null; }
+    });
+    const [ownerFilter, setOwnerFilter] = useState('all'); // 'all' | 'Nick' | 'MP'
+    const [mode, setMode] = useState('work'); // 'work' | 'home'
+    const [theme, setTheme] = useState(() => {
+        try { return localStorage.getItem('theme') || 'light'; } catch (_) { return 'light'; }
+    });
+    const [calendarTypeFilter, setCalendarTypeFilter] = useState('work'); // 'work' | 'home' | 'all'
+    const [calendarVisibility, setCalendarVisibility] = useState(() => {
+        // visibility toggles for calendar: { Nick: { work: true, personal: true }, MP: { work: true, personal: true } }
+        try {
+            const saved = JSON.parse(localStorage.getItem('calendarVisibility')||'null');
+            if (saved && typeof saved==='object') return saved;
+        } catch(_) {}
+        return { Nick: { work: true, personal: true }, MP: { work: true, personal: true } };
+    });
+
     // Collections
     const [tasks, setTasks] = useState([]);      // {id, title, date(YYYY-MM-DD), done, recurrence}
-    const [events, setEvents] = useState([]);    // {id, title, date(YYYY-MM-DD)}
+    const [events, setEvents] = useState([]);    // {id, title, date(YYYY-MM-DD), type('work'|'personal'), owner}
     const [groceries, setGroceries] = useState([]); // {id, name, quantity, checked}
     const [requests, setRequests] = useState([]);   // {id, title, details, priority, requestedDueDate, approved, approvedDueDate, status}
 
@@ -34,6 +53,8 @@ export default function App() {
     const [newItemType, setNewItemType] = useState('task'); // 'task' | 'event'
     const [newItemTitle, setNewItemTitle] = useState('');
     const [newTaskRecurrence, setNewTaskRecurrence] = useState('none'); // none | daily | weekly | biweekly | monthly
+    const [newTaskType, setNewTaskType] = useState('personal'); // personal | work
+    const [newEventType, setNewEventType] = useState('work'); // personal | work
     const [newRequestTitle, setNewRequestTitle] = useState('');
     const [newRequestPriority, setNewRequestPriority] = useState('medium');
     const [requestDetails, setRequestDetails] = useState('');
@@ -48,6 +69,12 @@ export default function App() {
     const [reqFormDueDate, setReqFormDueDate] = useState('');
     const [reqFormDetails, setReqFormDetails] = useState('');
 
+    // Boss requests (work)
+    const [bossReqTitle, setBossReqTitle] = useState('');
+    const [bossReqPriority, setBossReqPriority] = useState('medium');
+    const [bossReqDueDate, setBossReqDueDate] = useState('');
+    const [bossReqDetails, setBossReqDetails] = useState('');
+
     // Sidebar filter
     const [sidebarRecurrence, setSidebarRecurrence] = useState('daily'); // daily | weekly | biweekly | monthly
 
@@ -59,8 +86,18 @@ export default function App() {
     const [editEventTitle, setEditEventTitle] = useState('');
     const [editEventNotes, setEditEventNotes] = useState('');
 
+    // Work tab notes modal
+    const [workNotesTaskId, setWorkNotesTaskId] = useState(null);
+    const [workNotesDraft, setWorkNotesDraft] = useState('');
+    // Work tab subtask notes modal
+    const [workSubNotesTaskId, setWorkSubNotesTaskId] = useState(null);
+    const [workSubNotesSubId, setWorkSubNotesSubId] = useState(null);
+    const [workSubNotesDraft, setWorkSubNotesDraft] = useState('');
+    // Work tab new subtask input state per task
+    const [newSubTitleByTask, setNewSubTitleByTask] = useState({});
+
     // Meals / Meal Planner
-    const [meals, setMeals] = useState([]); // {id,title,recipe,link,ingredients:[{id,name,quantity}]}
+    const [meals, setMeals] = useState([]); // {id,title,recipe,link,ingredients:[{id,name,quantity}], fileUrl?, owner}
     const [groceriesSubtab, setGroceriesSubtab] = useState('list'); // list | planner
     // New meal form
     const [mealTitle, setMealTitle] = useState('');
@@ -73,88 +110,144 @@ export default function App() {
     const [plannerWeekStart, setPlannerWeekStart] = useState(formatDate(new Date()));
     const [plannerSelection, setPlannerSelection] = useState({}); // {0..6: mealId}
 
+    // Meal file attachment
+    const [mealFileUrl, setMealFileUrl] = useState('');
+
+    // Work files
+    const [workFiles, setWorkFiles] = useState([]); // {id,title,url,owner,uploadedAt}
+
+    // Sync mode to active tab
+    useEffect(() => {
+        setActiveTab(mode === 'work' ? 'work' : 'home');
+    }, [mode]);
+
     // Backup/Restore in-progress state
     const [isBackingUp, setIsBackingUp] = useState(false);
     const [isRestoring, setIsRestoring] = useState(false);
 
-    // Load state from Blob first, fallback to localStorage
+    // Sync theme with document root
     useEffect(() => {
-        // Prefer Blob state when available (no Firebase required)
-        const tryLoadBlob = async () => {
+        try { localStorage.setItem('theme', theme); } catch (_) {}
+        const root = document.documentElement;
+        if (theme === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
+    }, [theme]);
+
+    useEffect(() => {
+        try { localStorage.setItem('calendarVisibility', JSON.stringify(calendarVisibility)); } catch (_) {}
+    }, [calendarVisibility]);
+
+    useEffect(() => {
+        // default calendar filter according to mode
+        setCalendarTypeFilter(mode==='work' ? 'work' : 'home');
+    }, [mode]);
+
+    // Persist currentUser
+    useEffect(() => {
+        try { if (currentUser) localStorage.setItem('currentUser', currentUser); else localStorage.removeItem('currentUser'); } catch (_) {}
+    }, [currentUser]);
+
+    // Load state from Blob first (awaited), prefer freshest between Blob and localStorage using savedAt
+    useEffect(() => {
+        (async () => {
+            const readLocal = () => {
+                const out = {};
+                try { out.tasks = JSON.parse(localStorage.getItem('tasks')||'null') || undefined; } catch (_) {}
+                try { out.groceries = JSON.parse(localStorage.getItem('groceries')||'null') || undefined; } catch (_) {}
+                try { out.requests = JSON.parse(localStorage.getItem('requests')||'null') || undefined; } catch (_) {}
+                try { out.events = JSON.parse(localStorage.getItem('events')||'null') || undefined; } catch (_) {}
+                try { out.meals = JSON.parse(localStorage.getItem('meals')||'null') || undefined; } catch (_) {}
+                try { out.workFiles = JSON.parse(localStorage.getItem('workFiles')||'null') || undefined; } catch (_) {}
+                try { out.savedAt = localStorage.getItem('savedAt') || null; } catch (_) {}
+                return out;
+            };
+
             try {
                 const resp = await fetch('/api/state');
-                if (!resp.ok) throw new Error('Blob load failed');
-                const json = await resp.json();
-                const d = json?.data || {};
-                if (Array.isArray(d.events)) setEvents(d.events);
-                if (Array.isArray(d.tasks)) setTasks(d.tasks);
-                if (Array.isArray(d.groceries)) setGroceries(d.groceries);
-                if (Array.isArray(d.requests)) setRequests(d.requests);
-                setUsingBlob(true);
+                if (resp.ok) {
+                    const json = await resp.json();
+                    const d = json?.data || {};
+                    // Enable Blob persistence
+                    setUsingBlob(true);
+
+                    const arrays = {
+                        events: Array.isArray(d.events) ? d.events : undefined,
+                        tasks: Array.isArray(d.tasks) ? d.tasks : undefined,
+                        groceries: Array.isArray(d.groceries) ? d.groceries : undefined,
+                        requests: Array.isArray(d.requests) ? d.requests : undefined,
+                        meals: Array.isArray(d.meals) ? d.meals : undefined,
+                        workFiles: Array.isArray(d.workFiles) ? d.workFiles : undefined,
+                    };
+                    const hasAnyItems = Object.values(arrays).some((v) => Array.isArray(v) && v.length > 0);
+                    const local = readLocal();
+                    const blobSavedAt = Date.parse(d?.savedAt || '');
+                    const localSavedAt = Date.parse(local?.savedAt || '');
+                    const preferLocal = localSavedAt && (!blobSavedAt || localSavedAt > blobSavedAt);
+
+                    if (!hasAnyItems || preferLocal) {
+                        if (Array.isArray(local.events)) setEvents(local.events);
+                        if (Array.isArray(local.tasks)) setTasks(local.tasks);
+                        if (Array.isArray(local.groceries)) setGroceries(local.groceries);
+                        if (Array.isArray(local.requests)) setRequests(local.requests);
+                        if (Array.isArray(local.meals)) setMeals(local.meals);
+                        if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
+                    } else {
+                        if (arrays.events) setEvents(arrays.events);
+                        if (arrays.tasks) setTasks(arrays.tasks);
+                        if (arrays.groceries) setGroceries(arrays.groceries);
+                        if (arrays.requests) setRequests(arrays.requests);
+                        if (arrays.meals) setMeals(arrays.meals);
+                        if (arrays.workFiles) setWorkFiles(arrays.workFiles);
+                    }
+                } else {
+                    setUsingBlob(false);
+                    const local = readLocal();
+                    if (Array.isArray(local.events)) setEvents(local.events);
+                    if (Array.isArray(local.tasks)) setTasks(local.tasks);
+                    if (Array.isArray(local.groceries)) setGroceries(local.groceries);
+                    if (Array.isArray(local.requests)) setRequests(local.requests);
+                    if (Array.isArray(local.meals)) setMeals(local.meals);
+                    if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
+                }
             } catch (_) {
                 setUsingBlob(false);
+                const local = readLocal();
+                if (Array.isArray(local.events)) setEvents(local.events);
+                if (Array.isArray(local.tasks)) setTasks(local.tasks);
+                if (Array.isArray(local.groceries)) setGroceries(local.groceries);
+                if (Array.isArray(local.requests)) setRequests(local.requests);
+                if (Array.isArray(local.meals)) setMeals(local.meals);
+                if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
             }
-        };
-        tryLoadBlob();
-        {
-            try {
-                const savedTasks = localStorage.getItem('tasks');
-                if (savedTasks) {
-                    const parsed = JSON.parse(savedTasks);
-                    if (Array.isArray(parsed)) setTasks(parsed);
-                }
-            } catch (_) {}
-            try {
-                const savedGroceries = localStorage.getItem('groceries');
-                if (savedGroceries) {
-                    const parsed = JSON.parse(savedGroceries);
-                    if (Array.isArray(parsed)) setGroceries(parsed);
-                }
-            } catch (_) {}
-            try {
-                const savedRequests = localStorage.getItem('requests');
-                if (savedRequests) {
-                    const parsed = JSON.parse(savedRequests);
-                    if (Array.isArray(parsed)) setRequests(parsed);
-                }
-            } catch (_) {}
-            try {
-                const savedEvents = localStorage.getItem('events');
-                if (savedEvents) {
-                    const parsed = JSON.parse(savedEvents);
-                    if (Array.isArray(parsed)) setEvents(parsed);
-                }
-            } catch (_) {}
-            try {
-                const savedMeals = localStorage.getItem('meals');
-                if (savedMeals) {
-                    const parsed = JSON.parse(savedMeals);
-                    if (Array.isArray(parsed)) setMeals(parsed);
-                }
-            } catch (_) {}
-        }
+        })();
     }, []);
 
     // Persist to Blob (debounced) and localStorage as cache
     useEffect(() => {
         const save = setTimeout(async () => {
-            if (!usingBlob) return;
-            try {
-                await fetch('/api/state', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        events,
-                        tasks,
-                        groceries,
-                        requests,
-                        savedAt: new Date().toISOString(),
-                    }),
-                });
-        } catch (_) {}
+            const nowIso = new Date().toISOString();
+            try { localStorage.setItem('savedAt', nowIso); } catch (_) {}
+            if (usingBlob) {
+                try {
+                    await fetch('/api/state', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            events,
+                            tasks,
+                            groceries,
+                            requests,
+                            meals,
+                            workFiles,
+                            savedAt: nowIso,
+                        }),
+                    });
+                } catch (_) {
+                    setUsingBlob(false);
+                }
+            }
         }, 400);
         return () => clearTimeout(save);
-    }, [events, tasks, groceries, requests, usingBlob]);
+    }, [events, tasks, groceries, requests, meals, workFiles, usingBlob]);
 
     // Persist collections
     useEffect(() => { try { localStorage.setItem('events', JSON.stringify(events)); } catch (_) {} }, [events]);
@@ -162,6 +255,7 @@ export default function App() {
     useEffect(() => { try { localStorage.setItem('groceries', JSON.stringify(groceries)); } catch (_) {} }, [groceries]);
     useEffect(() => { try { localStorage.setItem('requests', JSON.stringify(requests)); } catch (_) {} }, [requests]);
     useEffect(() => { try { localStorage.setItem('meals', JSON.stringify(meals)); } catch (_) {} }, [meals]);
+    useEffect(() => { try { localStorage.setItem('workFiles', JSON.stringify(workFiles)); } catch (_) {} }, [workFiles]);
 
     // Memoized values for calendar generation to prevent recalculation on every render
     const { month, year, daysInMonth, firstDayOfMonth } = useMemo(() => {
@@ -183,6 +277,7 @@ export default function App() {
 
     // Utilities
     const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const appliesOwnerFilter = (owner) => ownerFilter === 'all' || owner === ownerFilter;
     const parseYmd = (ymd) => {
         if (!ymd) return new Date();
         const parts = String(ymd).split('-').map((p) => parseInt(p, 10));
@@ -194,11 +289,39 @@ export default function App() {
     };
 
     // Tasks (as checklist items themselves)
-    const addTaskForDay = (dayStr, title, recurrence = 'none') => {
+    const addTaskForDay = (dayStr, title, recurrence = 'none', type = 'personal') => {
         const trimmed = title.trim();
         if (!trimmed) return;
         const id = generateId();
-        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, completedDates: [], recurrence, notes: '' }]);
+        const owner = currentUser || 'Nick';
+        setTasks((prev) => [...prev, { id, title: trimmed, date: dayStr, completedDates: [], recurrence, notes: '', type, priority: type==='work' ? 2 : null, estimate: type==='work' ? '' : null, subtasks: [], owner }]);
+    };
+    const addSubtask = (taskId, title) => {
+        const trimmed = (title || '').trim();
+        if (!trimmed) return;
+        const subId = generateId();
+        setTasks((prev) => prev.map((t) => {
+            if (t.id !== taskId) return t;
+            const subtasks = Array.isArray(t.subtasks) ? [...t.subtasks] : [];
+            subtasks.push({ id: subId, title: trimmed, notes: '', completedDates: [] });
+            return { ...t, subtasks };
+        }));
+    };
+    const toggleSubtaskDone = (taskId, subId, dayStr) => {
+        setTasks((prev) => prev.map((t) => {
+            if (t.id !== taskId) return t;
+            const subtasks = (t.subtasks || []).map((s) => {
+                if (s.id !== subId) return s;
+                const list = Array.isArray(s.completedDates) ? [...s.completedDates] : [];
+                const idx = list.indexOf(dayStr);
+                if (idx >= 0) list.splice(idx, 1); else list.push(dayStr);
+                return { ...s, completedDates: list };
+            });
+            return { ...t, subtasks };
+        }));
+    };
+    const deleteSubtask = (taskId, subId) => {
+        setTasks((prev) => prev.map((t) => t.id === taskId ? { ...t, subtasks: (t.subtasks || []).filter((s) => s.id !== subId) } : t));
     };
     const toggleTaskDone = (taskId, dayStr) => {
         setTasks((prev) => prev.map((t) => {
@@ -214,11 +337,12 @@ export default function App() {
     };
 
     // Events
-    const addEventForDay = (dayStr, title) => {
+    const addEventForDay = (dayStr, title, type = 'work') => {
         const trimmed = title.trim();
         if (!trimmed) return;
         const id = generateId();
-        setEvents((prev) => [...prev, { id, title: trimmed, date: dayStr, notes: '' }]);
+        const owner = currentUser || 'Nick';
+        setEvents((prev) => [...prev, { id, title: trimmed, date: dayStr, notes: '', type, owner }]);
     };
     const deleteEvent = (eventId) => {
         setEvents((prev) => prev.filter((e) => e.id !== eventId));
@@ -245,7 +369,7 @@ export default function App() {
     };
 
     // Requests
-    const handleAddRequest = (dueDayStr, title, priority, details) => {
+    const handleAddRequest = (dueDayStr, title, priority, details, source = 'fiance') => {
         const t = title.trim();
         if (!t) return;
         const id = generateId();
@@ -258,6 +382,8 @@ export default function App() {
             approved: false,
             approvedDueDate: null,
             status: 'pending',
+            source,
+            owner: currentUser || 'Nick',
         };
         setRequests((prev) => [...prev, payload]);
         setNewRequestTitle('');
@@ -314,15 +440,20 @@ export default function App() {
             let dayClasses = "relative p-2 h-36 text-xs border-r border-b border-gray-200 flex flex-col justify-start items-start transition-colors duration-200 overflow-hidden";
             if (dayStr === todayStr) dayClasses += " bg-blue-50";
 
-            const tasksToday = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate));
-            const eventsToday = events.filter(e => e.date === dayStr);
+            const allowsType = (type) => calendarTypeFilter==='all' || (calendarTypeFilter==='work' ? (type||'personal')==='work' : (type||'personal')==='personal');
+            const allowsOwnerType = (owner, type) => !!(calendarVisibility?.[owner]?.[type==='work'?'work':'personal']);
+            const tasksToday = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate) && appliesOwnerFilter(t.owner) && allowsType(t.type||'personal') && allowsOwnerType(t.owner || 'Nick', (t.type||'personal')));
+            const eventsToday = events.filter(e => e.date === dayStr && appliesOwnerFilter(e.owner) && allowsType(e.type||'personal') && allowsOwnerType(e.owner || 'Nick', (e.type||'personal')));
             const requestsToday = requests.filter(r => r.status === 'approved' && r.approvedDueDate && formatDate(r.approvedDueDate) === dayStr);
 
             calendarDays.push(
                 <div
                     key={dayStr}
                     className={dayClasses + " cursor-pointer hover:bg-gray-50"}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => setSelectedDayStr(dayStr)}
+                    onKeyDown={(e)=>{ if (e.key==='Enter' || e.key===' ') setSelectedDayStr(dayStr); }}
                 >
                     <span className="font-medium text-gray-700">{day}</span>
                     <div className="mt-1 w-full space-y-1">
@@ -335,7 +466,7 @@ export default function App() {
                             </div>
                         ))}
                         {tasksToday.map((t) => (
-                            <div key={`t-${t.id}`} className="w-full text-[10px] bg-blue-500 text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1">
+                            <div key={`t-${t.id}`} className="w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1" style={{ backgroundColor: (t.type||'personal')==='work' ? '#f59e0b' : '#3b82f6' }}>
                                 <span className={`truncate ${isTaskDoneOnDate(t, dayStr) ? 'line-through' : ''}`}>{t.title}</span>
                                 {t.recurrence && t.recurrence !== 'none' && <span className="ml-1 opacity-80">({t.recurrence})</span>}
                                 <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>
@@ -346,8 +477,8 @@ export default function App() {
                                 <div className="flex items-center justify-between">
                                     <span className="font-medium truncate">{r.title}</span>
                                     <button className="hover:bg-black/5 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteRequest(r.id); }}><Trash2 size={12} /></button>
+                                    </div>
                                 </div>
-                            </div>
                         ))}
                     </div>
                 </div>
@@ -366,16 +497,52 @@ export default function App() {
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
     return (
-        <div className="bg-gray-50 min-h-screen flex items-center justify-center p-4 font-sans">
+        <div className="bg-gray-50 dark:bg-gray-950 min-h-screen flex items-center justify-center p-4 font-sans">
             <div className="w-full max-w-7xl mx-auto space-y-4">
 
-                {/* Tabs */}
-                <div className="bg-white p-2 rounded-2xl shadow border border-gray-200">
+                {/* Login screen */}
+                {!currentUser && (
+                    <div className="w-full max-w-md mx-auto bg-white dark:bg-gray-900 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 text-center">
+                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Select User</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-300 mb-4">Choose who is using the app</div>
+                        <div className="flex items-center justify-center gap-3">
+                            <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=> setCurrentUser('Nick')}>Nick</button>
+                            <button className="px-4 py-2 rounded-lg bg-gray-800 text-white" onClick={()=> setCurrentUser('MP')}>MP</button>
+                        </div>
+                        <div className="mt-4 flex items-center justify-center gap-2 text-xs">
+                            <span className="text-gray-600 dark:text-gray-300">Theme</span>
+                            <button onClick={()=> setTheme(theme==='light'?'dark':'light')} className="p-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">
+                                {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
+                            </button>
+                        </div>
+                    </div>
+                )}
+                {currentUser && (
+                <>
+                {/* Top banner with mode toggle (centered) */}
+                <div className="flex items-center justify-center">
+                    <div className="flex items-center justify-center gap-2">
+                        <button onClick={()=> setMode('work')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='work' ? 'bg-amber-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Work</button>
+                        <button onClick={()=> setMode('home')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='home' ? 'bg-blue-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Home</button>
+                    </div>
+                </div>
+
+                {/* Tabs: distinct per mode */}
+                {mode==='work' ? (
+                <div className="bg-white dark:bg-gray-900 p-2 rounded-2xl shadow border border-gray-200 dark:border-gray-700">
                     <div className="flex flex-wrap gap-2 items-center">
                         <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
-                        <button onClick={() => setActiveTab('groceries')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='groceries' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ShoppingCart size={16} /> Groceries</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
+                        <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Tasks</button>
                         <div className="ml-auto flex items-center gap-2">
+                            <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                <option value="all">All</option>
+                                <option value="Nick">Nick</option>
+                                <option value="MP">MP</option>
+                            </select>
+                            <button onClick={()=> setTheme(theme==='light'?'dark':'light')} className="p-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">
+                                {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
+                            </button>
                             {usingBlob ? (
                                 <span className="text-xs text-green-700 bg-green-100 border border-green-200 rounded px-2 py-1">Blob</span>
                             ) : (
@@ -386,18 +553,8 @@ export default function App() {
                                 onClick={async ()=>{
                                     try {
                                         setIsBackingUp(true);
-                                        const payload = {
-                                            events,
-                                            tasks,
-                                            groceries,
-                                            requests,
-                                            exportedAt: new Date().toISOString(),
-                                        };
-                                        const resp = await fetch('/api/save-backup', {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ data: payload })
-                                        });
+                                        const payload = { events, tasks, groceries, requests, meals, workFiles, exportedAt: new Date().toISOString() };
+                                        const resp = await fetch('/api/save-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: payload })});
                                         const json = await resp.json();
                                         if (!resp.ok) throw new Error(json?.error || 'Backup failed');
                                         setInfoMessage('Backup saved');
@@ -408,7 +565,7 @@ export default function App() {
                                     }
                                 }}
                                 className={`text-xs rounded px-2 py-1 ${isBackingUp ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
-                            >{isBackingUp ? 'Backing up…' : 'Backup'}</button>
+                            >{isBackingUp ? 'Backing…' : 'Backup'}</button>
                             <button
                                 disabled={isRestoring}
                                 onClick={async ()=>{
@@ -422,6 +579,8 @@ export default function App() {
                                         if (Array.isArray(d.tasks)) setTasks(d.tasks);
                                         if (Array.isArray(d.groceries)) setGroceries(d.groceries);
                                         if (Array.isArray(d.requests)) setRequests(d.requests);
+                                        if (Array.isArray(d.meals)) setMeals(d.meals);
+                                        if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
                                         setInfoMessage('Backup restored');
                                     } catch (e) {
                                         setRemoteError(e?.message || 'Restore failed');
@@ -434,40 +593,114 @@ export default function App() {
                         </div>
                     </div>
                 </div>
+                ) : (
+                <div className="bg-white dark:bg-gray-900 p-2 rounded-2xl shadow border border-gray-200 dark:border-gray-700">
+                    <div className="flex flex-wrap gap-2 items-center">
+                        <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
+                        <button onClick={() => setActiveTab('groceries')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='groceries' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ShoppingCart size={16} /> Groceries</button>
+                        <button onClick={() => setActiveTab('chores')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='chores' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>Chores</button>
+                        <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
+                        <div className="ml-auto flex items-center gap-2">
+                            <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                <option value="all">All</option>
+                                <option value="Nick">Nick</option>
+                                <option value="MP">MP</option>
+                            </select>
+                            <button onClick={()=> setTheme(theme==='light'?'dark':'light')} className="p-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">
+                                {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
+                            </button>
+                            {usingBlob ? (
+                                <span className="text-xs text-green-700 bg-green-100 border border-green-200 rounded px-2 py-1">Blob</span>
+                            ) : (
+                                <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
+                            )}
+                            <button
+                                disabled={isBackingUp}
+                                onClick={async ()=>{
+                                    try {
+                                        setIsBackingUp(true);
+                                        const payload = { events, tasks, groceries, requests, meals, workFiles, exportedAt: new Date().toISOString() };
+                                        const resp = await fetch('/api/save-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: payload })});
+                                        const json = await resp.json();
+                                        if (!resp.ok) throw new Error(json?.error || 'Backup failed');
+                                        setInfoMessage('Backup saved');
+                                    } catch (e) {
+                                        setRemoteError(e?.message || 'Backup failed');
+                                    } finally {
+                                        setIsBackingUp(false);
+                                    }
+                                }}
+                                className={`text-xs rounded px-2 py-1 ${isBackingUp ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
+                            >{isBackingUp ? 'Backing…' : 'Backup'}</button>
+                            <button
+                                disabled={isRestoring}
+                                onClick={async ()=>{
+                                    try {
+                                        setIsRestoring(true);
+                                        const resp = await fetch('/api/load-backup');
+                                        const json = await resp.json();
+                                        if (!resp.ok) throw new Error(json?.error || 'Restore failed');
+                                        const d = json?.data || {};
+                                        if (Array.isArray(d.events)) setEvents(d.events);
+                                        if (Array.isArray(d.tasks)) setTasks(d.tasks);
+                                        if (Array.isArray(d.groceries)) setGroceries(d.groceries);
+                                        if (Array.isArray(d.requests)) setRequests(d.requests);
+                                        if (Array.isArray(d.meals)) setMeals(d.meals);
+                                        if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
+                                        setInfoMessage('Backup restored');
+                                    } catch (e) {
+                                        setRemoteError(e?.message || 'Restore failed');
+                                    } finally {
+                                        setIsRestoring(false);
+                                    }
+                                }}
+                                className={`text-xs rounded px-2 py-1 ${isRestoring ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
+                            >{isRestoring ? 'Restoring…' : 'Restore'}</button>
+                        </div>
+                    </div>
+                </div>
+                )}
 
                 {/* --- Calendar Display --- */}
                 {activeTab === 'calendar' && (
                 <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
-                    <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-xl font-bold text-gray-800">{monthNames[month]} {year}</h3>
-                            <div className="flex items-center gap-2">
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100">{monthNames[month]} {year}</h3>
+                        <div className="flex items-center gap-2">
                                 <button onClick={()=> setSelectedDayStr(formatDate(new Date()))} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">Open Today</button>
-                                <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
-                                    <ChevronLeft className="text-gray-600" size={20} />
-                                </button>
-                                <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
-                                    <ChevronRight className="text-gray-600" size={20} />
-                                </button>
+                                <select value={calendarTypeFilter} onChange={(e)=> setCalendarTypeFilter(e.target.value)} className="px-2 py-1 text-xs border border-gray-300 rounded">
+                                    <option value="work">Work</option>
+                                    <option value="home">Home</option>
+                                    <option value="all">All</option>
+                                </select>
+                            <button onClick={handlePrevMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
+                                <ChevronLeft className="text-gray-600" size={20} />
+                            </button>
+                            <button onClick={handleNextMonth} className="p-2 rounded-full hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 transition">
+                                <ChevronRight className="text-gray-600" size={20} />
+                            </button>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1">
+                            <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500 dark:text-gray-300">
+                                {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200 dark:border-gray-700">{day}</div>)}
                             </div>
-                        </div>
-                        <div className="grid grid-cols-7 text-center font-semibold text-sm text-gray-500">
-                            {dayNames.map(day => <div key={day} className="py-2 border-b-2 border-gray-200">{day}</div>)}
-                        </div>
-                        <div className="grid grid-cols-7 grid-rows-6">
-                            {renderCalendar()}
-                        </div>
-                        {remoteError && (
-                            <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
-                                <AlertTriangle size={14} />
-                                <span>{remoteError}</span>
+                            <div className="grid grid-cols-7 grid-rows-6">
+                                {renderCalendar()}
                             </div>
-                        )}
+                            {remoteError && (
+                                <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
+                                    <AlertTriangle size={14} />
+                                    <span>{remoteError}</span>
+                                </div>
+                            )}
+                    </div>
                     </div>
                     {/* Daily Tasks Sidebar */}
-                    <div className="bg-white p-4 rounded-2xl shadow-lg border border-gray-200 h-fit lg:sticky lg:top-4">
+                    <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 h-fit lg:sticky lg:top-4">
                         <div className="flex items-center justify-between mb-2">
-                            <h4 className="text-sm font-bold text-gray-800">Tasks</h4>
+                            <h4 className="text-sm font-bold text-gray-800 dark:text-gray-100">Tasks</h4>
                             <div className="flex items-center gap-2">
                                 <select value={sidebarRecurrence} onChange={(e)=>setSidebarRecurrence(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-[11px]">
                                     <option value="daily">Daily</option>
@@ -479,10 +712,10 @@ export default function App() {
                             </div>
                         </div>
                         <div className="space-y-2">
-                            {tasks.filter(t=>t.recurrence===sidebarRecurrence).length===0 && (
+                            {tasks.filter(t=>t.recurrence===sidebarRecurrence && appliesOwnerFilter(t.owner)).length===0 && (
                                 <div className="text-xs text-gray-500">No {sidebarRecurrence} tasks.</div>
                             )}
-                            {tasks.filter(t=>t.recurrence===sidebarRecurrence).map((t)=>{
+                            {tasks.filter(t=>t.recurrence===sidebarRecurrence && appliesOwnerFilter(t.owner)).map((t)=>{
                                 const todayStr = formatDate(new Date());
                                 const checked = isTaskDoneOnDate(t, todayStr);
                                 return (
@@ -493,14 +726,194 @@ export default function App() {
                                     </label>
                                 );
                             })}
+                </div>
+            </div>
+                </div>
+            )}
+
+                {/* Day Modal */}
+            {selectedDayStr && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/30" onClick={()=>setSelectedDayStr(null)} />
+                    <div className="relative bg-white dark:bg-gray-900 w-full max-w-2xl mx-4 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <div className="text-lg font-bold text-gray-800 dark:text-gray-100">{new Date(selectedDayStr+"T00:00:00").toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric'})}</div>
+                            <button className="p-1 rounded hover:bg-gray-100" onClick={()=>setSelectedDayStr(null)}><X size={18} /></button>
                         </div>
+                        <div className="space-y-3">
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-center">
+                                    <select value={newItemType} onChange={(e)=>setNewItemType(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                                        <option value="task">Task</option>
+                                        <option value="event">Event</option>
+                                    </select>
+                                    {newItemType==='task' && (
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <select value={newTaskRecurrence} onChange={(e)=>setNewTaskRecurrence(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                                                <option value="none">One-time</option>
+                                                <option value="daily">Daily</option>
+                                                <option value="weekly">Weekly</option>
+                                                <option value="biweekly">Biweekly</option>
+                                                <option value="monthly">Monthly</option>
+                                            </select>
+                                            <select value={newTaskType} onChange={(e)=>setNewTaskType(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                                                <option value="personal">Personal</option>
+                                                <option value="work">Work</option>
+                                            </select>
+                                        </div>
+                                    )}
+                                    {newItemType==='event' && (
+                                        <div className="grid grid-cols-1">
+                                            <select value={newEventType} onChange={(e)=>setNewEventType(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                                                <option value="work">Work</option>
+                                                <option value="personal">Personal</option>
+                                            </select>
+                                        </div>
+                                    )}
+                                    <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder={newItemType==='task'?"Add task":"Add event"} className="md:col-span-3 px-3 py-2 border border-gray-300 rounded-lg" />
+                                    <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                                        const t = (newItemTitle||'').trim(); if (!t) return;
+                                        if (newItemType==='task') { addTaskForDay(selectedDayStr, t, newTaskRecurrence, newTaskType==='work' ? 'work' : 'personal'); }
+                                        else { addEventForDay(selectedDayStr, t, newEventType); }
+                                        setNewItemTitle('');
+                                        setNewTaskRecurrence('none');
+                                        setNewTaskType('personal');
+                                        setNewEventType('work');
+                                    }}>Add</button>
+                                </div>
+                                </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                    <div className="text-sm font-semibold text-gray-700">Tasks</div>
+                                    {tasks.filter(t=> occursOnDay(t, parseYmd(selectedDayStr)) && appliesOwnerFilter(t.owner)).map((t)=>{
+                                        const checked = isTaskDoneOnDate(t, selectedDayStr);
+                                        const isEditing = editingTaskId === t.id;
+                                        return (
+                                            <div key={t.id} className="rounded p-2 text-xs" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FEF3C7' : '#EFF6FF', border: '1px solid ' + ((t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE') }}>
+                                                {!isEditing ? (
+                                                    <div className="flex items-start gap-2">
+                                                        <input type="checkbox" className="mt-0.5" checked={checked} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
+                                                        <div className="min-w-0">
+                                                            <div className={checked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={t.title}>{t.title}</div>
+                                                            {t.notes && <div className="text-[11px] text-gray-600 truncate" title={t.notes}>{t.notes}</div>}
+                                                            <div className="flex items-center gap-2 text-[10px]">
+                                                                {t.recurrence && t.recurrence!=='none' && <span className="text-blue-700">({t.recurrence})</span>}
+                                                                <span className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FDE68A' : '#DBEAFE', borderColor: (t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE', color: '#374151' }}>{(t.type||'personal')==='work' ? 'Work' : 'Personal'}</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="ml-auto flex items-center gap-2">
+                                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>{ setEditingTaskId(t.id); setEditTaskTitle(t.title); setEditTaskNotes(t.notes||''); }} title="Edit">✎</button>
+                                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)} title="Delete"><Trash2 size={12}/></button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-2">
+                                                        <input value={editTaskTitle} onChange={(e)=>setEditTaskTitle(e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Task title" />
+                                                        <textarea value={editTaskNotes} onChange={(e)=>setEditTaskNotes(e.target.value)} rows={2} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Notes (optional)" />
+                                                        <div className="flex items-center gap-2">
+                                                            <label className="text-[11px] text-gray-700">Repeat</label>
+                                                            <select value={t.recurrence||'none'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, recurrence: e.target.value } : x))} className="px-2 py-1 border border-blue-200 rounded text-xs">
+                                                                <option value="none">One-time</option>
+                                                                <option value="daily">Daily</option>
+                                                                <option value="weekly">Weekly</option>
+                                                                <option value="biweekly">Biweekly</option>
+                                                                <option value="monthly">Monthly</option>
+                                                            </select>
+                                                            <label className="text-[11px] text-gray-700 ml-2">Type</label>
+                                                            <select value={t.type||'personal'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, type: e.target.value } : x))} className="px-2 py-1 border border-blue-200 rounded text-xs">
+                                                                <option value="personal">Personal</option>
+                                                                <option value="work">Work</option>
+                                                            </select>
+                                                            <div className="ml-auto flex items-center gap-2">
+                                                                <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>{
+                                                                    const title = editTaskTitle.trim(); if (!title) return;
+                                                                    setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, title, notes: editTaskNotes } : x));
+                                                                    setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes('');
+                                                                }}>Save</button>
+                                                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes(''); }}>Cancel</button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                    {tasks.filter(t=> occursOnDay(t, parseYmd(selectedDayStr))).length===0 && (
+                                        <div className="text-xs text-gray-500">No tasks for this day.</div>
+                                    )}
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="text-sm font-semibold text-gray-700">Events</div>
+                                    {events.filter(e=> e.date===selectedDayStr && appliesOwnerFilter(e.owner)).map((e)=>{
+                                        const isEditing = editingEventId === e.id;
+                                        return (
+                                            <div key={e.id} className="w-full text-[12px] rounded-lg shadow px-2 py-2" style={{ backgroundColor: '#E6E6FA' }}>
+                                                {!isEditing ? (
+                                                    <div className="flex items-start gap-2">
+                                                        <div className="min-w-0">
+                                                            <div className="font-medium text-gray-800 truncate" title={e.title}>{e.title}</div>
+                                                            {e.notes && <div className="text-[11px] text-gray-700 truncate" title={e.notes}>{e.notes}</div>}
+                                                        </div>
+                                                        <div className="ml-auto flex items-center gap-2">
+                                                            <button className="text-gray-700 hover:text-gray-900" onClick={()=>{ setEditingEventId(e.id); setEditEventTitle(e.title); setEditEventNotes(e.notes||''); }} title="Edit">✎</button>
+                                                            <button className="text-gray-700 hover:text-gray-900" onClick={()=>deleteEvent(e.id)} title="Delete"><Trash2 size={14}/></button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-2">
+                                                        <input value={editEventTitle} onChange={(ev)=>setEditEventTitle(ev.target.value)} className="w-full px-2 py-1 border border-purple-200 rounded text-xs" placeholder="Event title" />
+                                                        <textarea value={editEventNotes} onChange={(ev)=>setEditEventNotes(ev.target.value)} rows={2} className="w-full px-2 py-1 border border-purple-200 rounded text-xs" placeholder="Notes (optional)" />
+                                                        <div className="flex items-center gap-2">
+                                                            <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>{
+                                                                const title = editEventTitle.trim(); if (!title) return;
+                                                                setEvents((prev)=> prev.map((x)=> x.id===e.id ? { ...x, title, notes: editEventNotes } : x));
+                                                                setEditingEventId(null); setEditEventTitle(''); setEditEventNotes('');
+                                                            }}>Save</button>
+                                                            <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingEventId(null); setEditEventTitle(''); setEditEventNotes(''); }}>Cancel</button>
+                                            </div>
+                                    </div>
+                                )}
+                            </div>
+                                        );
+                                    })}
+                                    {events.filter(e=> e.date===selectedDayStr).length===0 && (
+                                        <div className="text-xs text-gray-500">No events for this day.</div>
+                                    )}
+                                </div>
+                                                        </div>
+                                                    </div>
+                                                    </div>
+                                                </div>
+                )}
+
+                {/* Filter row under tab bar - only on calendar tab */}
+                {activeTab==='calendar' && (
+                <div className="bg-white dark:bg-gray-900 p-2 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-3">
+                    <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">Calendar Filter:</div>
+                    <select value={calendarTypeFilter} onChange={(e)=> setCalendarTypeFilter(e.target.value)} className="px-2 py-1 text-xs border border-gray-300 rounded">
+                        <option value="work">Work</option>
+                        <option value="home">Home</option>
+                        <option value="all">All</option>
+                    </select>
+                    <div className="flex items-center gap-4 text-xs">
+                        <div className="font-semibold text-gray-700 dark:text-gray-300">Nick</div>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, work: e.target.checked }}))} /> Work</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, personal: e.target.checked }}))} /> Home</label>
+                        <div className="font-semibold text-gray-700 dark:text-gray-300 ml-4">MP</div>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, work: e.target.checked }}))} /> Work</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, personal: e.target.checked }}))} /> Home</label>
+                    </div>
+                    <div className="ml-auto flex items-center gap-2">
+                        <button className="px-2 py-1 border rounded text-xs" onClick={()=> setCalendarVisibility({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } })}>All</button>
+                        <button className="px-2 py-1 border rounded text-xs" onClick={()=> setCalendarVisibility({ Nick: { work: mode==='work', personal: mode==='home' }, MP: { work: mode==='work', personal: mode==='home' } })}>Mode</button>
                     </div>
                 </div>
                 )}
 
-                {/* Groceries Tab */}
-                {activeTab === 'groceries' && (
-                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-6">
+                {/* Groceries Tab (Home only) */}
+                {mode==='home' && activeTab === 'groceries' && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
                     <div className="flex items-center gap-3">
                         <div className={`text-sm font-semibold px-3 py-1 rounded cursor-pointer ${groceriesSubtab==='list' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`} onClick={()=>setGroceriesSubtab('list')}>List</div>
                         <div className={`text-sm font-semibold px-3 py-1 rounded cursor-pointer ${groceriesSubtab==='planner' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`} onClick={()=>setGroceriesSubtab('planner')}>Meal Planner</div>
@@ -514,18 +927,18 @@ export default function App() {
                                     <input value={groceryQty} onChange={(e)=>setGroceryQty(e.target.value)} placeholder="Qty" className="px-3 py-2 border border-gray-300 rounded-lg" />
                                     <div className="md:col-span-2" />
                                     <button onClick={handleAddGrocery} className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700">Add Item</button>
-                                </div>
-                            </div>
+                                                        </div>
+                                                    </div>
                             <div className="space-y-2">
                                 {groceries.map((g)=> (
                                     <label key={g.id} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
                                         <input type="checkbox" checked={!!g.checked} onChange={()=>toggleGrocery(g.id)} />
                                         <div>
                                             <div className={`text-sm font-semibold ${g.checked ? 'line-through text-gray-500' : 'text-gray-800'}`}>{g.name} {g.quantity ? `· ${g.quantity}` : ''}</div>
-                                        </div>
+                                            </div>
                                         <button className="ml-auto text-xs bg-white border border-gray-300 text-gray-700 rounded px-2 py-1 hover:bg-gray-50" onClick={()=>deleteGrocery(g.id)}><Trash2 size={14}/></button>
                                     </label>
-                                ))}
+                                        ))}
                                 {groceries.length===0 && <div className="text-xs text-gray-500">No items yet.</div>}
                                 {groceries.some((g)=>g.checked) && (
                                     <div className="pt-2">
@@ -546,7 +959,30 @@ export default function App() {
                                     <div className="md:col-span-1" />
                                 </div>
                                 <textarea value={mealRecipe} onChange={(e)=>setMealRecipe(e.target.value)} rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" placeholder="Recipe notes (optional)" />
-                                <div className="space-y-2">
+                                <div className="flex items-center gap-2 text-xs">
+                                    <input type="file" accept="image/*,.pdf,.txt,.md" onChange={async (e)=>{
+                                        const file = e.target.files && e.target.files[0];
+                                        if (!file) return;
+                                        try {
+                                            const reader = new FileReader();
+                                            reader.onload = async () => {
+                                                const dataUrl = reader.result;
+                                                const resp = await fetch('/api/upload', {
+                                                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({ dataUrl, filename: file.name, scope: 'recipe' })
+                                                });
+                                                const json = await resp.json();
+                                                if (!resp.ok) throw new Error(json?.error || 'Upload failed');
+                                                setMealFileUrl(json.url);
+                                            };
+                                            reader.readAsDataURL(file);
+                                        } catch (err) {
+                                            setRemoteError(err?.message || 'Upload failed');
+                                        }
+                                    }} className="text-xs" />
+                                    {mealFileUrl && <a href={mealFileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-2 py-1 border rounded"><Upload size={12}/>View file</a>}
+                                </div>
+                                        <div className="space-y-2">
                                     <div className="text-xs font-semibold text-gray-600">Ingredients</div>
                                     {(mealIngredients||[]).map((ing)=> (
                                         <div key={ing.id} className="flex items-center gap-2 text-xs">
@@ -567,20 +1003,20 @@ export default function App() {
                                     <button className="text-xs bg-blue-600 text-white rounded px-3 py-1" onClick={()=>{
                                         const t = mealTitle.trim(); if (!t) return;
                                         const id = generateId();
-                                        setMeals((prev)=> [...prev, { id, title: t, recipe: mealRecipe.trim(), link: mealLink.trim(), ingredients: mealIngredients }]);
-                                        setMealTitle(''); setMealRecipe(''); setMealLink(''); setMealIngredients([]);
+                                        setMeals((prev)=> [...prev, { id, title: t, recipe: mealRecipe.trim(), link: mealLink.trim(), ingredients: mealIngredients, fileUrl: mealFileUrl, owner: currentUser || 'Nick' }]);
+                                        setMealTitle(''); setMealRecipe(''); setMealLink(''); setMealIngredients([]); setMealFileUrl('');
                                     }}>Save Meal</button>
                                 </div>
-                            </div>
+                                                    </div>
 
                             <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-3">
                                 <div className="flex items-center justify-between">
                                     <div className="text-sm font-semibold text-gray-700">Plan Week</div>
-                                    <div className="flex items-center gap-2">
+                                                    <div className="flex items-center gap-2">
                                         <label className="text-xs text-gray-600">Week starting</label>
                                         <input type="date" value={plannerWeekStart} onChange={(e)=>setPlannerWeekStart(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs" />
-                                    </div>
-                                </div>
+                                                    </div>
+                                                </div>
                                 <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
                                     {[0,1,2,3,4,5,6].map((offset)=>{
                                         const start = parseYmd(plannerWeekStart);
@@ -594,10 +1030,10 @@ export default function App() {
                                                     <option value="">Select meal…</option>
                                                     {meals.map((m)=> <option key={m.id} value={m.id}>{m.title}</option>)}
                                                 </select>
-                                            </div>
-                                        );
+                                        </div>
+                                    );
                                     })}
-                                </div>
+                            </div>
                                 <div className="flex justify-end">
                                     <button className="text-sm bg-green-600 text-white rounded px-3 py-2 hover:bg-green-700" onClick={()=>{
                                         // Add selected meals to calendar as events and push ingredients to groceries
@@ -606,7 +1042,7 @@ export default function App() {
                                             if (!mealId) return;
                                             const meal = meals.find(m=>m.id===mealId); if (!meal) return;
                                             // create event
-                                            setEvents((prev)=> [...prev, { id: generateId(), title: meal.title, date: ymd, notes: meal.link ? `Recipe: ${meal.link}\n` + (meal.recipe||'') : (meal.recipe||'') }]);
+                                            setEvents((prev)=> [...prev, { id: generateId(), title: meal.title, date: ymd, notes: meal.link ? `Recipe: ${meal.link}\n` + (meal.recipe||'') : (meal.recipe||'') , type: 'personal', owner: currentUser || 'Nick' }]);
                                             // add ingredients
                                             (meal.ingredients||[]).forEach((ing)=>{
                                                 addedGroceries.push({ id: generateId(), name: ing.name, quantity: ing.quantity||'', checked: false });
@@ -616,71 +1052,314 @@ export default function App() {
                                         // Clear selection
                                         setPlannerSelection({});
                                     }}>Make Plan</button>
-                                </div>
-                            </div>
                         </div>
-                    )}
+                    </div>
+                </div>
+            )}
+                </div>
+                )}
+
+                {/* Home: Chores tab */}
+                {mode==='home' && activeTab==='chores' && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-4">
+                    <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Chores</div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center">
+                            <select value={newTaskRecurrence} onChange={(e)=>setNewTaskRecurrence(e.target.value)} className="px-2 py-2 border border-gray-300 rounded-lg text-sm">
+                                <option value="none">One-time</option>
+                                <option value="daily">Daily</option>
+                                <option value="weekly">Weekly</option>
+                                <option value="biweekly">Biweekly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                            <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder="Add chore" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-lg" />
+                            <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                                const t = (newItemTitle||'').trim(); if (!t) return;
+                                const todayStr = formatDate(new Date());
+                                addTaskForDay(todayStr, t, newTaskRecurrence, 'personal');
+                                setNewItemTitle(''); setNewTaskRecurrence('none');
+                            }}>Add</button>
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        {tasks.filter(t=> (t.type||'personal')==='personal' && appliesOwnerFilter(t.owner)).map((t)=>{
+                            const todayStr = formatDate(new Date());
+                            const checked = isTaskDoneOnDate(t, todayStr);
+                            return (
+                                <label key={`home-${t.id}`} className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded px-2 py-2 text-xs">
+                                    <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, todayStr)} />
+                                    <span className={checked ? 'line-through text-gray-500' : 'text-gray-800'}>{t.title}</span>
+                                    <button className="ml-auto text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={12} /></button>
+                                </label>
+                            );
+                        })}
+                        {tasks.filter(t=> (t.type||'personal')==='personal' && appliesOwnerFilter(t.owner)).length===0 && (
+                            <div className="text-xs text-gray-500">No chores yet.</div>
+                        )}
+                    </div>
                 </div>
                 )}
 
                 {/* Requests Tab */}
                 {activeTab === 'requests' && (
-                <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200 space-y-6">
-                    <div className="text-xl font-bold text-gray-800">Fiancé Requests</div>
-                    <div className="text-xs text-gray-500">Add, approve, or complete requests. Approved requests appear on the calendar (light pink) on their approved date.</div>
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                        <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
-                            <input value={reqFormTitle} onChange={(e)=>setReqFormTitle(e.target.value)} placeholder="Title" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
-                            <select value={reqFormPriority} onChange={(e)=>setReqFormPriority(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
-                                <option value="low">Low</option>
-                                <option value="medium">Medium</option>
-                                <option value="high">High</option>
-                            </select>
-                            <input type="date" value={reqFormDueDate} onChange={(e)=>setReqFormDueDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
-                            <input value={reqFormDetails} onChange={(e)=>setReqFormDetails(e.target.value)} placeholder="Details (optional)" className="px-3 py-2 border border-gray-300 rounded-lg md:col-span-2" />
-                            <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
-                                if (!reqFormTitle.trim()) return;
-                                const id = generateId();
-                                const payload = {
-                                    id,
-                                    title: reqFormTitle.trim(),
-                                    details: reqFormDetails.trim(),
-                                    priority: reqFormPriority,
-                                    requestedDueDate: reqFormDueDate ? new Date(reqFormDueDate).toISOString() : null,
-                                    approved: false,
-                                    approvedDueDate: null,
-                                    status: 'pending',
-                                };
-                                setRequests((prev)=>[...prev, payload]);
-                                setReqFormTitle(''); setReqFormDetails(''); setReqFormDueDate(''); setReqFormPriority('medium');
-                            }}>Add</button>
-                        </div>
-                    </div>
-                    <div className="grid grid-cols-1 gap-2">
-                        {requests.length === 0 && <div className="text-xs text-gray-500">No requests.</div>}
-                        {requests.sort((a,b)=>{
-                            const pri = { high: 0, medium: 1, low: 2 };
-                            return pri[a.priority]-pri[b.priority];
-                        }).map((r)=>(
-                            <div key={r.id} className="flex items-center justify-between rounded px-3 py-2 text-sm" style={{ backgroundColor: '#ffd6e7', border: '1px solid #f5a6bd' }}>
-                                <div>
-                                    <div className="font-semibold text-[#7a2946]">{r.title}</div>
-                                    <div className="text-xs text-[#7a2946]">Priority: <span className="capitalize">{r.priority}</span>{r.requestedDueDate ? ` · requested ${new Date(r.requestedDueDate).toLocaleDateString()}` : ''}{r.approvedDueDate ? ` · approved ${new Date(r.approvedDueDate).toLocaleDateString()}` : ''}</div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    {r.status==='pending' && (
-                                        <>
-                                            <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>approveRequest(r.id, e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs" />
-                                            <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>
-                                        </>
-                                    )}
-                                    {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
-                                    <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>
-                                </div>
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
+                    {mode==='work' ? (
+                    <>
+                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Boss Requests</div>
+                        <div className="text-xs text-gray-500">Add, approve, or complete requests from your boss. Approved requests appear on the calendar on their approved date.</div>
+                        <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
+                            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                                <input value={bossReqTitle} onChange={(e)=>setBossReqTitle(e.target.value)} placeholder="Title" className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                <select value={bossReqPriority} onChange={(e)=>setBossReqPriority(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm">
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                                <input type="date" value={bossReqDueDate} onChange={(e)=>setBossReqDueDate(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                <input value={bossReqDetails} onChange={(e)=>setBossReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
+                                <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={()=>{
+                                    if (!bossReqTitle.trim()) return;
+                                    handleAddRequest(bossReqDueDate || formatDate(new Date()), bossReqTitle, bossReqPriority, bossReqDetails, 'boss');
+                                    setBossReqTitle(''); setBossReqPriority('medium'); setBossReqDueDate(''); setBossReqDetails('');
+                                }}>Add</button>
                             </div>
-                        ))}
+                            <div className="space-y-2">
+                                {requests.filter(r=> r.source==='boss' && appliesOwnerFilter(r.owner)).map((r)=>(
+                                    <div key={`boss-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-amber-200">
+                                        <div>
+                                            <div className="font-semibold text-gray-800">{r.title}</div>
+                                            <div className="text-[11px] text-gray-600 capitalize">{r.priority}</div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {r.status==='pending' && <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>}
+                                            {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>completeRequest(r.id)}>Done</button>}
+                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={12}/></button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </>
+                    ) : (
+                    <>
+                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Fiancé Requests</div>
+                        <div className="text-xs text-gray-500">Add, approve, or complete requests. Approved requests appear on the calendar (light pink) on their approved date.</div>
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                                <input value={reqFormTitle} onChange={(e)=>setReqFormTitle(e.target.value)} placeholder="Title" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                                <select value={reqFormPriority} onChange={(e)=>setReqFormPriority(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                                <input type="date" value={reqFormDueDate} onChange={(e)=>setReqFormDueDate(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                                <input value={reqFormDetails} onChange={(e)=>setReqFormDetails(e.target.value)} placeholder="Details (optional)" className="px-3 py-2 border border-gray-300 rounded-lg md:col-span-2" />
+                                <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                                    if (!reqFormTitle.trim()) return;
+                                    const id = generateId();
+                                    const payload = {
+                                        id,
+                                        title: reqFormTitle.trim(),
+                                        details: reqFormDetails.trim(),
+                                        priority: reqFormPriority,
+                                        requestedDueDate: reqFormDueDate ? new Date(reqFormDueDate).toISOString() : null,
+                                        approved: false,
+                                        approvedDueDate: null,
+                                        status: 'pending',
+                                        source: 'fiance',
+                                    };
+                                    setRequests((prev)=>[...prev, { ...payload, owner: currentUser || 'Nick' }]);
+                                    setReqFormTitle(''); setReqFormDetails(''); setReqFormDueDate(''); setReqFormPriority('medium');
+                                }}>Add</button>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                            {requests.filter(r=> r.source!=='boss' && appliesOwnerFilter(r.owner)).sort((a,b)=>{
+                                const pri = { high: 0, medium: 1, low: 2 };
+                                return pri[a.priority]-pri[b.priority];
+                            }).map((r)=>(
+                                <div key={r.id} className="flex items-center justify-between rounded px-3 py-2 text-sm" style={{ backgroundColor: '#ffd6e7', border: '1px solid #f5a6bd' }}>
+                                    <div>
+                                        <div className="font-semibold text-[#7a2946]">{r.title}</div>
+                                        <div className="text-xs text-[#7a2946]">Priority: <span className="capitalize">{r.priority}</span>{r.requestedDueDate ? ` · requested ${new Date(r.requestedDueDate).toLocaleDateString()}` : ''}{r.approvedDueDate ? ` · approved ${new Date(r.approvedDueDate).toLocaleDateString()}` : ''}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {r.status==='pending' && (
+                                            <>
+                                                <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>approveRequest(r.id, e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs" />
+                                                <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>
+                                            </>
+                                        )}
+                                        {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
+                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </> )}
+                </div>
+                )}
+
+                {/* Work Tab (Work mode only) */}
+                {mode==='work' && activeTab === 'work' && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-4">
+                    <div className="flex items-center gap-2">
+                        <Briefcase size={18} />
+                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Work — Today</div>
+                        <div className="ml-auto text-xs text-gray-500">{formatDate(new Date())}</div>
+                    </div>
+                    {/* Quick upload for work files */}
+                    <div className="flex items-center gap-2 text-xs">
+                        <label className="px-2 py-1 bg-gray-100 border rounded cursor-pointer inline-flex items-center gap-1">
+                            <Upload size={12} /> Upload file
+                            <input type="file" className="hidden" onChange={async (e)=>{
+                                const file = e.target.files && e.target.files[0];
+                                if (!file) return;
+                                try {
+                                    const reader = new FileReader();
+                                    reader.onload = async () => {
+                                        const dataUrl = reader.result;
+                                        const resp = await fetch('/api/upload', {
+                                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ dataUrl, filename: file.name, scope: 'work' })
+                                        });
+                                        const json = await resp.json();
+                                        if (!resp.ok) throw new Error(json?.error || 'Upload failed');
+                                        const fileEntry = { id: generateId(), title: file.name, url: json.url, owner: currentUser || 'Nick', uploadedAt: new Date().toISOString() };
+                                        setWorkFiles((prev)=> [...prev, fileEntry]);
+                                        setInfoMessage('File uploaded');
+                                    };
+                                    reader.readAsDataURL(file);
+                                } catch (err) {
+                                    setRemoteError(err?.message || 'Upload failed');
+                                }
+                            }} />
+                        </label>
+                        {workFiles.length>0 && <span className="text-gray-600">{workFiles.length} file(s)</span>}
+                    </div>
+                    <div className="space-y-2">
+                        {tasks.filter(t=> (t.type||'personal')==='work' && occursOnDay(t, new Date()) && appliesOwnerFilter(t.owner) ).length===0 && (
+                            <div className="text-xs text-gray-500">No work tasks for today.</div>
+                        )}
+                        {tasks
+                            .filter(t=> (t.type||'personal')==='work' && occursOnDay(t, new Date()) && appliesOwnerFilter(t.owner))
+                            .sort((a,b)=> (a.priority||3) - (b.priority||3))
+                            .map((t)=>{
+                            const todayStr = formatDate(new Date());
+                            const checked = isTaskDoneOnDate(t, todayStr);
+                            return (
+                                <div key={`work-${t.id}`} className="rounded px-3 py-2 text-sm" style={{ backgroundColor: '#FEF3C7', border: '1px solid #FCD34D' }}>
+                                    <div className="flex items-center gap-2">
+                                        <input type="checkbox" checked={checked} onChange={()=>toggleTaskDone(t.id, todayStr)} />
+                                        <div className="min-w-0">
+                                            <div className={checked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={t.title}>{t.title}</div>
+                                            {t.notes && <div className="text-xs text-gray-600 truncate" title={t.notes}>{t.notes}</div>}
+                                            {t.recurrence && t.recurrence!=='none' && <div className="text-[11px] text-gray-600">({t.recurrence})</div>}
+                                        </div>
+                                        <div className="ml-auto flex items-center gap-2">
+                                            <button className="text-gray-700 hover:text-gray-900" title="Open notes" onClick={()=>{ setWorkNotesTaskId(t.id); setWorkNotesDraft(t.notes||''); }}>
+                                                <Clipboard size={16} />
+                                            </button>
+                                            <div className="flex items-center gap-1 text-xs">
+                                                <span className="text-gray-600">P</span>
+                                                <select value={t.priority ?? 3} onChange={(e)=> setTasks((prev)=> prev.map(x=> x.id===t.id ? { ...x, priority: parseInt(e.target.value,10) } : x))} className="px-1 py-0.5 border border-amber-300 rounded">
+                                                    <option value={1}>1</option>
+                                                    <option value={2}>2</option>
+                                                    <option value={3}>3</option>
+                                                </select>
+                                            </div>
+                                            <div className="flex items-center gap-1 text-xs">
+                                                <span className="text-gray-600">Est</span>
+                                                <select value={t.estimate || ''} onChange={(e)=> setTasks((prev)=> prev.map(x=> x.id===t.id ? { ...x, estimate: e.target.value } : x))} className="px-1 py-0.5 border border-amber-300 rounded">
+                                                    <option value="">—</option>
+                                                    <option value="30m">30m</option>
+                                                    <option value="1h">1h</option>
+                                                    <option value="90m">90m</option>
+                                                    <option value="2h">2h</option>
+                                                    <option value="3h">3h</option>
+                                                </select>
+                                            </div>
+                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)}><Trash2 size={14}/></button>
+                                        </div>
+                                    </div>
+                                    {/* Subtasks */}
+                                    <div className="mt-2 space-y-2">
+                                        {(t.subtasks||[]).map((s)=>{
+                                            const subChecked = Array.isArray(s.completedDates) && s.completedDates.includes(todayStr);
+                                            return (
+                                                <div key={s.id} className="flex items-start gap-2 text-xs bg-white/60 rounded border border-amber-200 px-2 py-1">
+                                                    <input type="checkbox" className="mt-0.5" checked={subChecked} onChange={()=>toggleSubtaskDone(t.id, s.id, todayStr)} />
+                                                    <div className="min-w-0">
+                                                        <div className={subChecked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={s.title}>{s.title}</div>
+                                                        {s.notes && <div className="text-[11px] text-gray-600 truncate" title={s.notes}>{s.notes}</div>}
+                                                    </div>
+                                                    <div className="ml-auto flex items-center gap-2">
+                                                        <button className="text-gray-700 hover:text-gray-900" title="Open subtask notes" onClick={()=>{ setWorkSubNotesTaskId(t.id); setWorkSubNotesSubId(s.id); setWorkSubNotesDraft(s.notes||''); }}> <Clipboard size={14} /> </button>
+                                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteSubtask(t.id, s.id)}><Trash2 size={12}/></button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        <div className="flex items-center gap-2 text-xs">
+                                            <input value={newSubTitleByTask[t.id]||''} onChange={(e)=> setNewSubTitleByTask((prev)=> ({...prev, [t.id]: e.target.value}))} placeholder="Add subtask" className="flex-1 px-2 py-1 border border-amber-300 rounded" />
+                                            <button className="bg-amber-600 text-white rounded px-2 py-1" onClick={()=>{ addSubtask(t.id, newSubTitleByTask[t.id]||''); setNewSubTitleByTask((prev)=> ({...prev, [t.id]: ''})); }}>Add</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
+                )}
+
+                {/* Work Task Notes Modal */}
+                {workNotesTaskId && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center">
+                        <div className="absolute inset-0 bg-black/30" onClick={()=>{ setWorkNotesTaskId(null); setWorkNotesDraft(''); }} />
+                        <div className="relative bg-white w-full max-w-md mx-4 rounded-2xl shadow-xl border border-gray-200 p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="text-sm font-semibold text-gray-800">Task Notes</div>
+                                <button className="p-1 rounded hover:bg-gray-100" onClick={()=>{ setWorkNotesTaskId(null); setWorkNotesDraft(''); }}><X size={16} /></button>
+                            </div>
+                            <textarea value={workNotesDraft} onChange={(e)=>setWorkNotesDraft(e.target.value)} rows={8} className="w-full px-3 py-2 border border-gray-300 rounded text-sm" placeholder="Add notes..." />
+                            <div className="mt-3 flex justify-end gap-2">
+                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-3 py-1" onClick={()=>{ setWorkNotesTaskId(null); setWorkNotesDraft(''); }}>Cancel</button>
+                                <button className="text-xs bg-blue-600 text-white rounded px-3 py-1" onClick={()=>{
+                                    const id = workNotesTaskId;
+                                    setTasks((prev)=> prev.map(x=> x.id===id ? { ...x, notes: workNotesDraft } : x));
+                                    setWorkNotesTaskId(null); setWorkNotesDraft('');
+                                }}>Save</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Work Subtask Notes Modal */}
+                {workSubNotesTaskId && workSubNotesSubId && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center">
+                        <div className="absolute inset-0 bg-black/30" onClick={()=>{ setWorkSubNotesTaskId(null); setWorkSubNotesSubId(null); setWorkSubNotesDraft(''); }} />
+                        <div className="relative bg-white w-full max-w-md mx-4 rounded-2xl shadow-xl border border-gray-200 p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <div className="text-sm font-semibold text-gray-800">Subtask Notes</div>
+                                <button className="p-1 rounded hover:bg-gray-100" onClick={()=>{ setWorkSubNotesTaskId(null); setWorkSubNotesSubId(null); setWorkSubNotesDraft(''); }}><X size={16} /></button>
+                            </div>
+                            <textarea value={workSubNotesDraft} onChange={(e)=>setWorkSubNotesDraft(e.target.value)} rows={8} className="w-full px-3 py-2 border border-gray-300 rounded text-sm" placeholder="Add notes..." />
+                            <div className="mt-3 flex justify-end gap-2">
+                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-3 py-1" onClick={()=>{ setWorkSubNotesTaskId(null); setWorkSubNotesSubId(null); setWorkSubNotesDraft(''); }}>Cancel</button>
+                                <button className="text-xs bg-blue-600 text-white rounded px-3 py-1" onClick={()=>{
+                                    const tId = workSubNotesTaskId; const sId = workSubNotesSubId;
+                                    setTasks((prev)=> prev.map(t=>{
+                                        if (t.id!==tId) return t;
+                                        const subtasks = (t.subtasks||[]).map(s=> s.id===sId ? { ...s, notes: workSubNotesDraft } : s);
+                                        return { ...t, subtasks };
+                                    }));
+                                    setWorkSubNotesTaskId(null); setWorkSubNotesSubId(null); setWorkSubNotesDraft('');
+                                }}>Save</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                </>
                 )}
 
             </div>
