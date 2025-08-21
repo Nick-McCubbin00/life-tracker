@@ -37,6 +37,7 @@ export default function App() {
     const [events, setEvents] = useState([]);    // {id, title, date(YYYY-MM-DD), type('work'|'personal'), owner}
     const [groceries, setGroceries] = useState([]); // {id, name, quantity, checked}
     const [requests, setRequests] = useState([]);   // {id, title, details, priority, requestedDueDate, approved, approvedDueDate, status}
+    const [afterWorkPlans, setAfterWorkPlans] = useState([]); // {id, date(YYYY-MM-DD), title, start(HH:MM), end(HH:MM)}
 
     // Inputs (day modal)
     const [newItemType, setNewItemType] = useState('task'); // 'task' | 'event'
@@ -104,6 +105,12 @@ export default function App() {
 
     // Work files
     const [workFiles, setWorkFiles] = useState([]); // {id,title,url,owner,uploadedAt}
+
+    // After work planner inputs
+    const [awpDate, setAwpDate] = useState(formatDate(new Date()));
+    const [awpTitle, setAwpTitle] = useState('');
+    const [awpStart, setAwpStart] = useState('16:00');
+    const [awpEnd, setAwpEnd] = useState('17:00');
 
     // Google Calendar integration state
     const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '';
@@ -369,6 +376,7 @@ export default function App() {
                 if (Array.isArray(d.requests)) setRequests(d.requests);
                 if (Array.isArray(d.meals)) setMeals(d.meals);
                 if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
+                if (Array.isArray(d.afterWorkPlans)) setAfterWorkPlans(d.afterWorkPlans);
             } catch (e) {
                 setRemoteError(e?.message || 'Failed to load state');
             }
@@ -391,6 +399,7 @@ export default function App() {
                             requests,
                             meals,
                             workFiles,
+                            afterWorkPlans,
                             savedAt: nowIso,
                         }),
                     });
@@ -400,7 +409,7 @@ export default function App() {
             }
         }, 400);
         return () => clearTimeout(save);
-    }, [events, tasks, groceries, requests, meals, workFiles, usingBlob]);
+    }, [events, tasks, groceries, requests, meals, workFiles, afterWorkPlans, usingBlob]);
 
     // Removed localStorage caching of collections to ensure cross-instance consistency
 
@@ -597,7 +606,36 @@ export default function App() {
 
             const allowsType = (type) => calendarTypeFilter==='all' || (calendarTypeFilter==='work' ? (type||'personal')==='work' : (type||'personal')==='personal');
             const allowsOwnerType = (owner, type) => !!(calendarVisibility?.[owner]?.[type==='work'?'work':'personal']);
-            const tasksToday = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate) && appliesOwnerFilter(t.owner) && allowsType(t.type||'personal') && allowsOwnerType(t.owner || 'Nick', (t.type||'personal')));
+            const tasksOccurring = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate) && appliesOwnerFilter(t.owner) && allowsType(t.type||'personal') && allowsOwnerType(t.owner || 'Nick', (t.type||'personal')));
+            // Overdue includes:
+            // - One-time tasks scheduled before today and not completed on their base date
+            // - Recurring tasks that occur today but have an uncompleted prior occurrence
+            const overdueOnce = tasks.filter(t => (t.recurrence||'none')==='none'
+                && appliesOwnerFilter(t.owner)
+                && allowsType(t.type||'personal')
+                && allowsOwnerType(t.owner || 'Nick', (t.type||'personal'))
+                && (()=>{ try { return new Date(t.date+ 'T00:00:00') < dayDate && !isTaskDoneOnDate(t, t.date); } catch(_) { return false; } })());
+            const overdueRecurring = tasksOccurring.filter(t => {
+                const isToday = formatDate(dayDate) === todayStr;
+                if (isToday) return false;
+                try {
+                    const taskBase = new Date(t.date + 'T00:00:00');
+                    const end = new Date(dayDate);
+                    end.setDate(end.getDate() - 1);
+                    for (let d = new Date(taskBase); d <= end; d.setDate(d.getDate() + 1)) {
+                        if (occursOnDay(t, d)) {
+                            const ds = formatDate(d);
+                            if (!isTaskDoneOnDate(t, ds)) return true;
+                        }
+                    }
+                    return false;
+                } catch(_) { return false; }
+            });
+            const overdue = [...new Set([...
+                overdueOnce,
+                ...overdueRecurring,
+            ])];
+            const tasksToday = tasksOccurring.filter(t => !overdue.includes(t));
             const eventsToday = events.filter(e => e.date === dayStr && appliesOwnerFilter(e.owner) && allowsType(e.type||'personal') && allowsOwnerType(e.owner || 'Nick', (e.type||'personal')));
             const requestsToday = requests.filter(r => r.status === 'approved' && r.approvedDueDate && formatDate(r.approvedDueDate) === dayStr);
 
@@ -618,6 +656,26 @@ export default function App() {
                                     <span className="font-medium truncate text-gray-800">{ev.title}</span>
                                     <button className="text-gray-600 hover:text-gray-900" onClick={(e)=>{ e.stopPropagation(); deleteEvent(ev.id); }}><Trash2 size={12} /></button>
                                 </div>
+                            </div>
+                        ))}
+                        {overdue.length>0 && (
+                            <div className="w-full text-[10px] rounded-lg border border-red-300 bg-red-50 text-red-700 px-1.5 py-0.5 font-semibold">OVERDUE</div>
+                        )}
+                        {overdue.map((t) => (
+                            <div key={`t-overdue-${t.id}`} className="w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1" style={{ backgroundColor: '#ef4444' }}>
+                                <span className={`truncate ${isTaskDoneOnDate(t, dayStr) ? 'line-through' : ''}`}>{t.title}</span>
+                                {t.recurrence && t.recurrence !== 'none' && <span className="ml-1 opacity-80">({t.recurrence})</span>}
+                                <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>
+                            </div>
+                        ))}
+                        {overdue.length>0 && (
+                            <div className="w-full text-[10px] rounded-lg border border-red-300 bg-red-50 text-red-700 px-1.5 py-0.5 font-semibold">OVERDUE</div>
+                        )}
+                        {overdue.map((t) => (
+                            <div key={`t-overdue-${t.id}`} className="w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1" style={{ backgroundColor: '#ef4444' }}>
+                                <span className={`truncate ${isTaskDoneOnDate(t, dayStr) ? 'line-through' : ''}`}>{t.title}</span>
+                                {t.recurrence && t.recurrence !== 'none' && <span className="ml-1 opacity-80">({t.recurrence})</span>}
+                                <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>
                             </div>
                         ))}
                         {tasksToday.map((t) => (
@@ -689,6 +747,7 @@ export default function App() {
                         <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
                         <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Tasks</button>
+                        <button onClick={() => setActiveTab('afterwork')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='afterwork' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Clipboard size={16} /> After work planner</button>
                         <div className="ml-auto flex items-center gap-2">
                             {/* Google Calendar controls */}
                             <div className="flex items-center gap-2">
@@ -1507,6 +1566,52 @@ export default function App() {
                                 </div>
                             );
                         })}
+                    </div>
+                </div>
+                )}
+
+                {/* After Work Planner Tab */}
+                {activeTab === 'afterwork' && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
+                    <div className="flex items-center gap-3">
+                        <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">After work planner</div>
+                        <div className="ml-auto flex items-center gap-2">
+                            <input type="date" value={awpDate || ''} onChange={(e)=> setAwpDate(e.target.value)} className="px-2 py-1 border border-gray-300 rounded" />
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-center">
+                            <input value={awpTitle} onChange={(e)=> setAwpTitle(e.target.value)} placeholder="What are you doing?" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-lg" />
+                            <input type="time" min="16:00" max="22:00" value={awpStart} onChange={(e)=> setAwpStart(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                            <input type="time" min="16:00" max="22:00" value={awpEnd} onChange={(e)=> setAwpEnd(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                            <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                                const title = (awpTitle||'').trim(); if (!title) return;
+                                const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                                setAfterWorkPlans(prev => [...prev, { id, date: awpDate, title, start: awpStart, end: awpEnd }]);
+                                setAwpTitle('');
+                            }}>Add</button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        {(afterWorkPlans.filter(p=> p.date === awpDate).sort((a,b)=> (a.start||'').localeCompare(b.start))).map((p)=> (
+                            <div key={p.id} className="flex items-center gap-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">
+                                <div className="text-xs font-semibold text-gray-600 w-24">{p.start} - {p.end}</div>
+                                <div className="text-sm text-gray-800 dark:text-gray-100 truncate">{p.title}</div>
+                                <div className="ml-auto flex items-center gap-2">
+                                    <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{
+                                        const title = prompt('Edit title', p.title);
+                                        if (title===null) return;
+                                        setAfterWorkPlans(prev => prev.map(x => x.id===p.id ? { ...x, title: title.trim() } : x));
+                                    }}>Edit</button>
+                                    <button className="text-xs bg-red-100 text-red-700 rounded px-2 py-1" onClick={()=> setAfterWorkPlans(prev => prev.filter(x => x.id!==p.id))}>Delete</button>
+                                </div>
+                            </div>
+                        ))}
+                        {afterWorkPlans.filter(p=> p.date === awpDate).length===0 && (
+                            <div className="text-xs text-gray-500">No plans yet for this day.</div>
+                        )}
                     </div>
                 </div>
                 )}
