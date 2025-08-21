@@ -25,29 +25,20 @@ export default function App() {
     const infoTimerRef = useRef(null);
 
     // Auth / User & global filters
-    const [currentUser, setCurrentUser] = useState(() => {
-        try { return localStorage.getItem('currentUser') || null; } catch (_) { return null; }
-    });
+    const [currentUser, setCurrentUser] = useState(null);
     const [ownerFilter, setOwnerFilter] = useState('all'); // 'all' | 'Nick' | 'MP'
     const [mode, setMode] = useState('work'); // 'work' | 'home'
-    const [theme, setTheme] = useState(() => {
-        try { return localStorage.getItem('theme') || 'light'; } catch (_) { return 'light'; }
-    });
+    const [theme, setTheme] = useState('light');
     const [calendarTypeFilter, setCalendarTypeFilter] = useState('work'); // 'work' | 'home' | 'all'
-    const [calendarVisibility, setCalendarVisibility] = useState(() => {
-        // visibility toggles for calendar: { Nick: { work: true, personal: true }, MP: { work: true, personal: true } }
-        try {
-            const saved = JSON.parse(localStorage.getItem('calendarVisibility')||'null');
-            if (saved && typeof saved==='object') return saved;
-        } catch(_) {}
-        return { Nick: { work: true, personal: true }, MP: { work: true, personal: true } };
-    });
+    const [calendarVisibility, setCalendarVisibility] = useState({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } });
 
     // Collections
     const [tasks, setTasks] = useState([]);      // {id, title, date(YYYY-MM-DD), done, recurrence}
     const [events, setEvents] = useState([]);    // {id, title, date(YYYY-MM-DD), type('work'|'personal'), owner}
     const [groceries, setGroceries] = useState([]); // {id, name, quantity, checked}
     const [requests, setRequests] = useState([]);   // {id, title, details, priority, requestedDueDate, approved, approvedDueDate, status}
+    const [afterWorkPlans, setAfterWorkPlans] = useState([]); // {id, date(YYYY-MM-DD), title, start(HH:MM), end(HH:MM)}
+    const [trips, setTrips] = useState([]); // {id, title, startDate, endDate, items:[{id,time,title,place:{placeId,name,address,location}}]}
 
     // Inputs (day modal)
     const [newItemType, setNewItemType] = useState('task'); // 'task' | 'event'
@@ -116,6 +107,62 @@ export default function App() {
     // Work files
     const [workFiles, setWorkFiles] = useState([]); // {id,title,url,owner,uploadedAt}
 
+    // After work planner inputs
+    const [awpDate, setAwpDate] = useState(formatDate(new Date()));
+    const [awpTitle, setAwpTitle] = useState('');
+    const [awpStart, setAwpStart] = useState('16:00');
+    const [awpEnd, setAwpEnd] = useState('17:00');
+
+    // Trip planner inputs
+    const [tripTitle, setTripTitle] = useState('');
+    const [tripStart, setTripStart] = useState('');
+    const [tripEnd, setTripEnd] = useState('');
+    const [activeTripId, setActiveTripId] = useState(null);
+    const [tripItemTitle, setTripItemTitle] = useState('');
+    const [tripItemTime, setTripItemTime] = useState('');
+    const [placeQuery, setPlaceQuery] = useState('');
+    const [placeResults, setPlaceResults] = useState([]);
+    const [selectedPlace, setSelectedPlace] = useState(null);
+    const placesTimerRef = useRef(null);
+    const [travelMode, setTravelMode] = useState('driving');
+
+    const updateActiveTrip = (updater) => {
+        setTrips((prev) => prev.map((t) => t.id === activeTripId ? updater(t) : t));
+    };
+    const moveTripItem = (tripId, itemId, dir) => {
+        setTrips((prev) => prev.map((t) => {
+            if (t.id !== tripId) return t;
+            const items = Array.isArray(t.items) ? [...t.items] : [];
+            const idx = items.findIndex((x) => x.id === itemId);
+            if (idx < 0) return t;
+            const swapWith = dir === 'up' ? idx - 1 : idx + 1;
+            if (swapWith < 0 || swapWith >= items.length) return t;
+            const tmp = items[idx];
+            items[idx] = items[swapWith];
+            items[swapWith] = tmp;
+            return { ...t, items };
+        }));
+    };
+
+    // Google Calendar integration state
+    const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '';
+    const [googleAccessToken, setGoogleAccessToken] = useState(null);
+    const [googleTokenExpiresAt, setGoogleTokenExpiresAt] = useState(null);
+    const [googleAuthorized, setGoogleAuthorized] = useState(false);
+    const [googleCalendars, setGoogleCalendars] = useState([]); // {id, summary, primary}
+    const [googleWorkCalendarId, setGoogleWorkCalendarId] = useState(() => {
+        try { return localStorage.getItem('googleWorkCalendarId') || ''; } catch (_) { return ''; }
+    });
+    const [googleHomeCalendarId, setGoogleHomeCalendarId] = useState(() => {
+        try { return localStorage.getItem('googleHomeCalendarId') || ''; } catch (_) { return ''; }
+    });
+    const [googleSyncBusy, setGoogleSyncBusy] = useState(false);
+    const isSyncingFromGoogleRef = useRef(false);
+
+    // Persist selected calendar choices
+    useEffect(() => {}, [googleWorkCalendarId]);
+    useEffect(() => {}, [googleHomeCalendarId]);
+
     // Sync mode to active tab
     useEffect(() => {
         setActiveTab(mode === 'work' ? 'work' : 'home');
@@ -127,105 +174,252 @@ export default function App() {
 
     // Sync theme with document root
     useEffect(() => {
-        try { localStorage.setItem('theme', theme); } catch (_) {}
         const root = document.documentElement;
         if (theme === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
     }, [theme]);
 
-    useEffect(() => {
-        try { localStorage.setItem('calendarVisibility', JSON.stringify(calendarVisibility)); } catch (_) {}
-    }, [calendarVisibility]);
+    useEffect(() => {}, [calendarVisibility]);
 
     useEffect(() => {
         // default calendar filter according to mode
         setCalendarTypeFilter(mode==='work' ? 'work' : 'home');
     }, [mode]);
 
-    // Persist currentUser
-    useEffect(() => {
-        try { if (currentUser) localStorage.setItem('currentUser', currentUser); else localStorage.removeItem('currentUser'); } catch (_) {}
-    }, [currentUser]);
+    useEffect(() => {}, [currentUser]);
 
-    // Load state from Blob first (awaited), prefer freshest between Blob and localStorage using savedAt
-    useEffect(() => {
-        (async () => {
-            const readLocal = () => {
-                const out = {};
-                try { out.tasks = JSON.parse(localStorage.getItem('tasks')||'null') || undefined; } catch (_) {}
-                try { out.groceries = JSON.parse(localStorage.getItem('groceries')||'null') || undefined; } catch (_) {}
-                try { out.requests = JSON.parse(localStorage.getItem('requests')||'null') || undefined; } catch (_) {}
-                try { out.events = JSON.parse(localStorage.getItem('events')||'null') || undefined; } catch (_) {}
-                try { out.meals = JSON.parse(localStorage.getItem('meals')||'null') || undefined; } catch (_) {}
-                try { out.workFiles = JSON.parse(localStorage.getItem('workFiles')||'null') || undefined; } catch (_) {}
-                try { out.savedAt = localStorage.getItem('savedAt') || null; } catch (_) {}
-                return out;
+    useEffect(() => {}, []);
+
+    const addDaysToYmd = (ymd, days) => {
+        if (!ymd) return ymd;
+        const [y, m, d] = ymd.split('-').map((x) => Number(x));
+        const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+        dt.setUTCDate(dt.getUTCDate() + (days || 0));
+        const yyyy = dt.getUTCFullYear();
+        const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+        const dd = String(dt.getUTCDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const ensureGoogleToken = async () => {
+        if (!GOOGLE_CLIENT_ID) {
+            setRemoteError('Missing REACT_APP_GOOGLE_CLIENT_ID env var for Google Calendar.');
+            throw new Error('Missing Google Client ID');
+        }
+        if (googleAccessToken && googleTokenExpiresAt && Date.now() < googleTokenExpiresAt - 30_000) {
+            return googleAccessToken;
+        }
+        // Request a new access token using Google Identity Services
+        await new Promise((resolve, reject) => {
+            try {
+                const tokenClient = window.google?.accounts?.oauth2?.initTokenClient({
+                    client_id: GOOGLE_CLIENT_ID,
+                    scope: 'https://www.googleapis.com/auth/calendar',
+                    callback: (resp) => {
+                        if (resp && resp.access_token) {
+                            const expiresInSec = Number(resp.expires_in || 3600);
+                            const expAt = Date.now() + expiresInSec * 1000;
+                            setGoogleAccessToken(resp.access_token);
+                            setGoogleTokenExpiresAt(expAt);
+                            setGoogleAuthorized(true);
+                            try { localStorage.setItem('googleAccessToken', resp.access_token); } catch (_) {}
+                            try { localStorage.setItem('googleTokenExpiresAt', String(expAt)); } catch (_) {}
+                            resolve();
+                        } else {
+                            reject(new Error('Failed to authorize with Google'));
+                        }
+                    },
+                });
+                tokenClient.requestAccessToken({ prompt: googleAuthorized ? '' : 'consent' });
+            } catch (e) {
+                reject(e);
+            }
+        });
+        return googleAccessToken;
+    };
+
+    const googleApiFetch = async (path, options = {}) => {
+        const token = await ensureGoogleToken();
+        const url = `https://www.googleapis.com/calendar/v3${path}`;
+        const resp = await fetch(url, {
+            ...options,
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+                ...(options.headers || {}),
+            },
+        });
+        if (!resp.ok) {
+            const text = await resp.text().catch(() => '');
+            throw new Error(text || `Google API error ${resp.status}`);
+        }
+        return resp.json();
+    };
+
+    const listGoogleCalendars = async () => {
+        try {
+            setGoogleSyncBusy(true);
+            const json = await googleApiFetch('/users/me/calendarList');
+            const items = Array.isArray(json?.items) ? json.items : [];
+            const mapped = items.map((c) => ({ id: c.id, summary: c.summary, primary: !!c.primary }));
+            setGoogleCalendars(mapped);
+        } catch (e) {
+            setRemoteError(e?.message || 'Failed to list Google calendars');
+        } finally {
+            setGoogleSyncBusy(false);
+        }
+    };
+
+    const importFromGoogle = async () => {
+        if (!googleWorkCalendarId && !googleHomeCalendarId) return;
+        try {
+            setGoogleSyncBusy(true);
+            isSyncingFromGoogleRef.current = true;
+            const timeMin = new Date();
+            timeMin.setUTCFullYear(timeMin.getUTCFullYear() - 1);
+            const timeMax = new Date();
+            timeMax.setUTCFullYear(timeMax.getUTCFullYear() + 1);
+            const isoMin = timeMin.toISOString();
+            const isoMax = timeMax.toISOString();
+
+            const fetchEvents = async (calendarId, typeLabel) => {
+                if (!calendarId) return [];
+                const q = new URLSearchParams({
+                    singleEvents: 'true',
+                    orderBy: 'startTime',
+                    timeMin: isoMin,
+                    timeMax: isoMax,
+                    maxResults: '2500',
+                }).toString();
+                const json = await googleApiFetch(`/calendars/${encodeURIComponent(calendarId)}/events?${q}`);
+                const items = Array.isArray(json?.items) ? json.items : [];
+                return items
+                    .filter((ev) => ev?.status !== 'cancelled')
+                    .map((ev) => {
+                        const start = ev.start?.date || ev.start?.dateTime;
+                        const ymd = ev.start?.date ? ev.start.date : formatDate(ev.start?.dateTime || ev.start);
+                        return {
+                            googleEventId: ev.id,
+                            googleCalendarId: calendarId,
+                            title: ev.summary || '(no title)',
+                            date: ymd,
+                            notes: ev.description || '',
+                            type: typeLabel,
+                        };
+                    });
             };
 
+            const [workItems, homeItems] = await Promise.all([
+                fetchEvents(googleWorkCalendarId, 'work'),
+                fetchEvents(googleHomeCalendarId, 'personal'),
+            ]);
+            const incoming = [...workItems, ...homeItems];
+            if (incoming.length === 0) return;
+
+            setEvents((prev) => {
+                const byGoogleId = new Map(prev.filter((e) => e.googleEventId).map((e) => [e.googleEventId, e]));
+                const next = [...prev];
+                incoming.forEach((inc) => {
+                    const existing = byGoogleId.get(inc.googleEventId);
+                    if (existing) {
+                        // Update fields if changed
+                        if (existing.title !== inc.title || existing.date !== inc.date || (existing.notes||'') !== (inc.notes||'')) {
+                            const idx = next.findIndex((x) => x.id === existing.id);
+                            if (idx >= 0) next[idx] = { ...existing, title: inc.title, date: inc.date, notes: inc.notes, type: inc.type, owner: existing.owner || (currentUser || 'Nick') };
+                        }
+                    } else {
+                        next.push({ id: generateId(), title: inc.title, date: inc.date, notes: inc.notes, type: inc.type, owner: currentUser || 'Nick', googleEventId: inc.googleEventId, googleCalendarId: inc.googleCalendarId });
+                    }
+                });
+                return next;
+            });
+        } catch (e) {
+            setRemoteError(e?.message || 'Failed to import from Google');
+        } finally {
+            isSyncingFromGoogleRef.current = false;
+            setGoogleSyncBusy(false);
+        }
+    };
+
+    const exportToGoogle = async () => {
+        try {
+            setGoogleSyncBusy(true);
+            await ensureGoogleToken();
+            const all = Array.isArray(events) ? events : [];
+            const targetable = all.filter((e) => (e.type === 'work' ? !!googleWorkCalendarId : e.type === 'personal' ? !!googleHomeCalendarId : false));
+
+            for (const ev of targetable) {
+                const calendarId = ev.type === 'work' ? googleWorkCalendarId : googleHomeCalendarId;
+                const resource = {
+                    summary: ev.title || '',
+                    description: ev.notes || '',
+                    start: { date: ev.date },
+                    end: { date: addDaysToYmd(ev.date, 1) },
+                };
+                try {
+                    if (ev.googleEventId && ev.googleCalendarId === calendarId) {
+                        await googleApiFetch(`/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(ev.googleEventId)}`, {
+                            method: 'PATCH',
+                            body: JSON.stringify(resource),
+                        });
+                    } else if (!ev.googleEventId) {
+                        const created = await googleApiFetch(`/calendars/${encodeURIComponent(calendarId)}/events`, {
+                            method: 'POST',
+                            body: JSON.stringify(resource),
+                        });
+                        const newGoogleId = created?.id;
+                        if (newGoogleId) {
+                            setEvents((prev) => prev.map((x) => (x.id === ev.id ? { ...x, googleEventId: newGoogleId, googleCalendarId: calendarId } : x)));
+                        }
+                    } else if (ev.googleEventId && ev.googleCalendarId && ev.googleCalendarId !== calendarId) {
+                        // Move between calendars: delete then create
+                        try {
+                            await googleApiFetch(`/calendars/${encodeURIComponent(ev.googleCalendarId)}/events/${encodeURIComponent(ev.googleEventId)}`, { method: 'DELETE' });
+                        } catch (_) {}
+                        const created = await googleApiFetch(`/calendars/${encodeURIComponent(calendarId)}/events`, { method: 'POST', body: JSON.stringify(resource) });
+                        const newGoogleId = created?.id;
+                        if (newGoogleId) {
+                            setEvents((prev) => prev.map((x) => (x.id === ev.id ? { ...x, googleEventId: newGoogleId, googleCalendarId: calendarId } : x)));
+                        }
+                    }
+                } catch (err) {
+                    // Continue with others, but surface one error
+                    setRemoteError(err?.message || 'Failed to sync some events to Google');
+                }
+            }
+        } catch (e) {
+            setRemoteError(e?.message || 'Failed to export to Google');
+        } finally {
+            setGoogleSyncBusy(false);
+        }
+    };
+
+    // Load state from Blob
+    useEffect(() => {
+        (async () => {
             try {
                 const resp = await fetch('/api/state');
-                if (resp.ok) {
+                if (!resp.ok) throw new Error('Failed to load state');
                     const json = await resp.json();
                     const d = json?.data || {};
-                    // Enable Blob persistence
                     setUsingBlob(true);
-
-                    const arrays = {
-                        events: Array.isArray(d.events) ? d.events : undefined,
-                        tasks: Array.isArray(d.tasks) ? d.tasks : undefined,
-                        groceries: Array.isArray(d.groceries) ? d.groceries : undefined,
-                        requests: Array.isArray(d.requests) ? d.requests : undefined,
-                        meals: Array.isArray(d.meals) ? d.meals : undefined,
-                        workFiles: Array.isArray(d.workFiles) ? d.workFiles : undefined,
-                    };
-                    const hasAnyItems = Object.values(arrays).some((v) => Array.isArray(v) && v.length > 0);
-                    const local = readLocal();
-                    const blobSavedAt = Date.parse(d?.savedAt || '');
-                    const localSavedAt = Date.parse(local?.savedAt || '');
-                    const preferLocal = localSavedAt && (!blobSavedAt || localSavedAt > blobSavedAt);
-
-                    if (!hasAnyItems || preferLocal) {
-                        if (Array.isArray(local.events)) setEvents(local.events);
-                        if (Array.isArray(local.tasks)) setTasks(local.tasks);
-                        if (Array.isArray(local.groceries)) setGroceries(local.groceries);
-                        if (Array.isArray(local.requests)) setRequests(local.requests);
-                        if (Array.isArray(local.meals)) setMeals(local.meals);
-                        if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
-                    } else {
-                        if (arrays.events) setEvents(arrays.events);
-                        if (arrays.tasks) setTasks(arrays.tasks);
-                        if (arrays.groceries) setGroceries(arrays.groceries);
-                        if (arrays.requests) setRequests(arrays.requests);
-                        if (arrays.meals) setMeals(arrays.meals);
-                        if (arrays.workFiles) setWorkFiles(arrays.workFiles);
-                    }
-                } else {
-                    setUsingBlob(false);
-                    const local = readLocal();
-                    if (Array.isArray(local.events)) setEvents(local.events);
-                    if (Array.isArray(local.tasks)) setTasks(local.tasks);
-                    if (Array.isArray(local.groceries)) setGroceries(local.groceries);
-                    if (Array.isArray(local.requests)) setRequests(local.requests);
-                    if (Array.isArray(local.meals)) setMeals(local.meals);
-                    if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
-                }
-            } catch (_) {
-                setUsingBlob(false);
-                const local = readLocal();
-                if (Array.isArray(local.events)) setEvents(local.events);
-                if (Array.isArray(local.tasks)) setTasks(local.tasks);
-                if (Array.isArray(local.groceries)) setGroceries(local.groceries);
-                if (Array.isArray(local.requests)) setRequests(local.requests);
-                if (Array.isArray(local.meals)) setMeals(local.meals);
-                if (Array.isArray(local.workFiles)) setWorkFiles(local.workFiles);
+                if (Array.isArray(d.events)) setEvents(d.events);
+                if (Array.isArray(d.tasks)) setTasks(d.tasks);
+                if (Array.isArray(d.groceries)) setGroceries(d.groceries);
+                if (Array.isArray(d.requests)) setRequests(d.requests);
+                if (Array.isArray(d.meals)) setMeals(d.meals);
+                if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
+                if (Array.isArray(d.trips)) setTrips(d.trips);
+                if (Array.isArray(d.afterWorkPlans)) setAfterWorkPlans(d.afterWorkPlans);
+            } catch (e) {
+                setRemoteError(e?.message || 'Failed to load state');
             }
         })();
     }, []);
 
-    // Persist to Blob (debounced) and localStorage as cache
+    // Persist to Blob (debounced)
     useEffect(() => {
         const save = setTimeout(async () => {
             const nowIso = new Date().toISOString();
-            try { localStorage.setItem('savedAt', nowIso); } catch (_) {}
             if (usingBlob) {
                 try {
                     await fetch('/api/state', {
@@ -238,24 +432,20 @@ export default function App() {
                             requests,
                             meals,
                             workFiles,
+                            trips,
+                            afterWorkPlans,
                             savedAt: nowIso,
                         }),
                     });
                 } catch (_) {
-                    setUsingBlob(false);
+                    setRemoteError('Failed to save state');
                 }
             }
         }, 400);
         return () => clearTimeout(save);
-    }, [events, tasks, groceries, requests, meals, workFiles, usingBlob]);
+    }, [events, tasks, groceries, requests, meals, workFiles, trips, afterWorkPlans, usingBlob]);
 
-    // Persist collections
-    useEffect(() => { try { localStorage.setItem('events', JSON.stringify(events)); } catch (_) {} }, [events]);
-    useEffect(() => { try { localStorage.setItem('tasks', JSON.stringify(tasks)); } catch (_) {} }, [tasks]);
-    useEffect(() => { try { localStorage.setItem('groceries', JSON.stringify(groceries)); } catch (_) {} }, [groceries]);
-    useEffect(() => { try { localStorage.setItem('requests', JSON.stringify(requests)); } catch (_) {} }, [requests]);
-    useEffect(() => { try { localStorage.setItem('meals', JSON.stringify(meals)); } catch (_) {} }, [meals]);
-    useEffect(() => { try { localStorage.setItem('workFiles', JSON.stringify(workFiles)); } catch (_) {} }, [workFiles]);
+    // Removed localStorage caching of collections to ensure cross-instance consistency
 
     // Memoized values for calendar generation to prevent recalculation on every render
     const { month, year, daysInMonth, firstDayOfMonth } = useMemo(() => {
@@ -344,8 +534,16 @@ export default function App() {
         const owner = currentUser || 'Nick';
         setEvents((prev) => [...prev, { id, title: trimmed, date: dayStr, notes: '', type, owner }]);
     };
-    const deleteEvent = (eventId) => {
+    const deleteEvent = async (eventId) => {
+        const target = (events || []).find((e) => e.id === eventId);
         setEvents((prev) => prev.filter((e) => e.id !== eventId));
+        if (target && target.googleEventId && target.googleCalendarId) {
+            try {
+                await googleApiFetch(`/calendars/${encodeURIComponent(target.googleCalendarId)}/events/${encodeURIComponent(target.googleEventId)}`, { method: 'DELETE' });
+            } catch (_) {
+                // Ignore failure; local deletion already applied
+            }
+        }
     };
 
     // Groceries
@@ -442,7 +640,20 @@ export default function App() {
 
             const allowsType = (type) => calendarTypeFilter==='all' || (calendarTypeFilter==='work' ? (type||'personal')==='work' : (type||'personal')==='personal');
             const allowsOwnerType = (owner, type) => !!(calendarVisibility?.[owner]?.[type==='work'?'work':'personal']);
-            const tasksToday = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate) && appliesOwnerFilter(t.owner) && allowsType(t.type||'personal') && allowsOwnerType(t.owner || 'Nick', (t.type||'personal')));
+            const tasksOccurring = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate) && appliesOwnerFilter(t.owner) && allowsType(t.type||'personal') && allowsOwnerType(t.owner || 'Nick', (t.type||'personal')));
+            // Only carry to the immediate next day, and only once the previous day has ended
+            const prevDate = new Date(dayDate);
+            prevDate.setDate(prevDate.getDate() - 1);
+            const prevStr = formatDate(prevDate);
+            const showOverdue = prevStr < todayStr; // don't carry from today to tomorrow until day ends
+            const overdue = showOverdue ? tasks.filter(t =>
+                appliesOwnerFilter(t.owner)
+                && allowsType(t.type||'personal')
+                && allowsOwnerType(t.owner || 'Nick', (t.type||'personal'))
+                && occursOnDay(t, prevDate)
+                && !isTaskDoneOnDate(t, prevStr)
+            ) : [];
+            const tasksToday = tasksOccurring.filter(t => !overdue.includes(t));
             const eventsToday = events.filter(e => e.date === dayStr && appliesOwnerFilter(e.owner) && allowsType(e.type||'personal') && allowsOwnerType(e.owner || 'Nick', (e.type||'personal')));
             const requestsToday = requests.filter(r => r.status === 'approved' && r.approvedDueDate && formatDate(r.approvedDueDate) === dayStr);
 
@@ -463,6 +674,26 @@ export default function App() {
                                     <span className="font-medium truncate text-gray-800">{ev.title}</span>
                                     <button className="text-gray-600 hover:text-gray-900" onClick={(e)=>{ e.stopPropagation(); deleteEvent(ev.id); }}><Trash2 size={12} /></button>
                                 </div>
+                            </div>
+                        ))}
+                        {overdue.length>0 && (
+                            <div className="w-full text-[10px] rounded-lg border border-red-300 bg-red-50 text-red-700 px-1.5 py-0.5 font-semibold">OVERDUE</div>
+                        )}
+                        {overdue.map((t) => (
+                            <div key={`t-overdue-${t.id}`} className="w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1" style={{ backgroundColor: '#ef4444' }}>
+                                <span className={`truncate ${isTaskDoneOnDate(t, dayStr) ? 'line-through' : ''}`}>{t.title}</span>
+                                {t.recurrence && t.recurrence !== 'none' && <span className="ml-1 opacity-80">({t.recurrence})</span>}
+                                <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>
+                            </div>
+                        ))}
+                        {overdue.length>0 && (
+                            <div className="w-full text-[10px] rounded-lg border border-red-300 bg-red-50 text-red-700 px-1.5 py-0.5 font-semibold">OVERDUE</div>
+                        )}
+                        {overdue.map((t) => (
+                            <div key={`t-overdue-${t.id}`} className="w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1" style={{ backgroundColor: '#ef4444' }}>
+                                <span className={`truncate ${isTaskDoneOnDate(t, dayStr) ? 'line-through' : ''}`}>{t.title}</span>
+                                {t.recurrence && t.recurrence !== 'none' && <span className="ml-1 opacity-80">({t.recurrence})</span>}
+                                <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>
                             </div>
                         ))}
                         {tasksToday.map((t) => (
@@ -534,7 +765,30 @@ export default function App() {
                         <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
                         <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Tasks</button>
+                        <button onClick={() => setActiveTab('afterwork')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='afterwork' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Clipboard size={16} /> After work planner</button>
                         <div className="ml-auto flex items-center gap-2">
+                            {/* Google Calendar controls */}
+                            <div className="flex items-center gap-2">
+                                {!googleAuthorized ? (
+                                    <button
+                                        onClick={async ()=>{ try { await ensureGoogleToken(); await listGoogleCalendars(); } catch(_){} }}
+                                        className="text-xs rounded px-2 py-1 bg-green-600 text-white hover:bg-green-700"
+                                    >Connect Google</button>
+                                ) : (
+                                    <>
+                                        <select value={googleWorkCalendarId} onChange={(e)=> setGoogleWorkCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                            <option value="">Work cal…</option>
+                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                        </select>
+                                        <select value={googleHomeCalendarId} onChange={(e)=> setGoogleHomeCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                            <option value="">Home cal…</option>
+                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                        </select>
+                                        <button onClick={importFromGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Import'}</button>
+                                        <button onClick={exportToGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Export'}</button>
+                                    </>
+                                )}
+                            </div>
                             <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
                                 <option value="all">All</option>
                                 <option value="Nick">Nick</option>
@@ -600,7 +854,30 @@ export default function App() {
                         <button onClick={() => setActiveTab('groceries')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='groceries' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><ShoppingCart size={16} /> Groceries</button>
                         <button onClick={() => setActiveTab('chores')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='chores' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>Chores</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
+                        <button onClick={() => setActiveTab('trip')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='trip' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Clipboard size={16} /> Trip planner</button>
                         <div className="ml-auto flex items-center gap-2">
+                            {/* Google Calendar controls */}
+                            <div className="flex items-center gap-2">
+                                {!googleAuthorized ? (
+                                    <button
+                                        onClick={async ()=>{ try { await ensureGoogleToken(); await listGoogleCalendars(); } catch(_){} }}
+                                        className="text-xs rounded px-2 py-1 bg-green-600 text-white hover:bg-green-700"
+                                    >Connect Google</button>
+                                ) : (
+                                    <>
+                                        <select value={googleWorkCalendarId} onChange={(e)=> setGoogleWorkCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                            <option value="">Work cal…</option>
+                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                        </select>
+                                        <select value={googleHomeCalendarId} onChange={(e)=> setGoogleHomeCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                            <option value="">Home cal…</option>
+                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                        </select>
+                                        <button onClick={importFromGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Import'}</button>
+                                        <button onClick={exportToGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Export'}</button>
+                                    </>
+                                )}
+                            </div>
                             <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
                                 <option value="all">All</option>
                                 <option value="Nick">Nick</option>
@@ -692,7 +969,8 @@ export default function App() {
                             {remoteError && (
                                 <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
                                     <AlertTriangle size={14} />
-                                    <span>{remoteError}</span>
+                                    <span className="flex-1">{remoteError}</span>
+                                    <button className="ml-2 text-red-700 hover:text-red-900" onClick={()=> setRemoteError('')}>Dismiss</button>
                                 </div>
                             )}
                     </div>
@@ -786,7 +1064,72 @@ export default function App() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div className="space-y-2">
                                     <div className="text-sm font-semibold text-gray-700">Tasks</div>
-                                    {tasks.filter(t=> occursOnDay(t, parseYmd(selectedDayStr)) && appliesOwnerFilter(t.owner)).map((t)=>{
+                                    {(() => {
+                                        const dayDate = parseYmd(selectedDayStr);
+                                        const prevDate = new Date(dayDate);
+                                        prevDate.setDate(prevDate.getDate() - 1);
+                                        const prevStr = formatDate(prevDate);
+                                        const showOverdue = prevStr < formatDate(new Date());
+                                        const occ = tasks.filter(t=> occursOnDay(t, dayDate) && appliesOwnerFilter(t.owner));
+                                        const overdue = showOverdue ? tasks.filter(t => occursOnDay(t, prevDate) && !isTaskDoneOnDate(t, prevStr) && appliesOwnerFilter(t.owner)) : [];
+                                        const todayList = occ.filter(t => !overdue.includes(t));
+                                        return (
+                                            <>
+                                                {overdue.length>0 && <div className="text-xs font-semibold text-red-600">OVERDUE</div>}
+                                                {overdue.map((t)=>{
+                                                    const checked = isTaskDoneOnDate(t, selectedDayStr);
+                                                    const isEditing = editingTaskId === t.id;
+                                                    return (
+                                                        <div key={`ov-${t.id}`} className="rounded p-2 text-xs" style={{ backgroundColor: '#FEE2E2', border: '1px solid #FCA5A5', color: '#991B1B' }}>
+                                                            {!isEditing ? (
+                                                                <div className="flex items-start gap-2">
+                                                                    <input type="checkbox" className="mt-0.5" checked={checked} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
+                                                                    <div className="min-w-0">
+                                                                        <div className={checked ? 'line-through text-red-400 truncate' : 'text-red-700 truncate'} title={t.title}>{t.title}</div>
+                                                                        {t.notes && <div className="text-[11px] text-red-700 truncate" title={t.notes}>{t.notes}</div>}
+                                                                        <div className="flex items-center gap-2 text-[10px]">
+                                                                            {t.recurrence && t.recurrence!=='none' && <span className="text-red-700">({t.recurrence})</span>}
+                                                                            <span className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: '#FECACA', borderColor: '#FCA5A5', color: '#7F1D1D' }}>{(t.type||'personal')==='work' ? 'Work' : 'Personal'}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="ml-auto flex items-center gap-2">
+                                                                        <button className="text-red-700 hover:text-red-900" onClick={()=>{ setEditingTaskId(t.id); setEditTaskTitle(t.title); setEditTaskNotes(t.notes||''); }} title="Edit">✎</button>
+                                                                        <button className="text-red-700 hover:text-red-900" onClick={()=>deleteTask(t.id)} title="Delete"><Trash2 size={12}/></button>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="space-y-2">
+                                                                    <input value={editTaskTitle} onChange={(e)=>setEditTaskTitle(e.target.value)} className="w-full px-2 py-1 border border-red-200 rounded text-xs" placeholder="Task title" />
+                                                                    <textarea value={editTaskNotes} onChange={(e)=>setEditTaskNotes(e.target.value)} rows={2} className="w-full px-2 py-1 border border-red-200 rounded text-xs" placeholder="Notes (optional)" />
+                                                                    <div className="flex items-center gap-2">
+                                                                        <label className="text-[11px] text-red-700">Repeat</label>
+                                                                        <select value={t.recurrence||'none'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, recurrence: e.target.value } : x))} className="px-2 py-1 border border-red-200 rounded text-xs">
+                                                                            <option value="none">One-time</option>
+                                                                            <option value="daily">Daily</option>
+                                                                            <option value="weekly">Weekly</option>
+                                                                            <option value="biweekly">Biweekly</option>
+                                                                            <option value="monthly">Monthly</option>
+                                                                        </select>
+                                                                        <label className="text-[11px] text-red-700 ml-2">Type</label>
+                                                                        <select value={t.type||'personal'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, type: e.target.value } : x))} className="px-2 py-1 border border-red-200 rounded text-xs">
+                                                                            <option value="personal">Personal</option>
+                                                                            <option value="work">Work</option>
+                                                                        </select>
+                                                                        <div className="ml-auto flex items-center gap-2">
+                                                                            <button className="text-xs bg-red-600 text-white rounded px-2 py-1" onClick={()=>{
+                                                                                const title = editTaskTitle.trim(); if (!title) return;
+                                                                                setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, title, notes: editTaskNotes } : x));
+                                                                                setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes('');
+                                                                            }}>Save</button>
+                                                                            <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes(''); }}>Cancel</button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                                {todayList.map((t)=>{
                                         const checked = isTaskDoneOnDate(t, selectedDayStr);
                                         const isEditing = editingTaskId === t.id;
                                         return (
@@ -839,9 +1182,12 @@ export default function App() {
                                             </div>
                                         );
                                     })}
-                                    {tasks.filter(t=> occursOnDay(t, parseYmd(selectedDayStr))).length===0 && (
+                                                {occ.length===0 && (
                                         <div className="text-xs text-gray-500">No tasks for this day.</div>
                                     )}
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                                 <div className="space-y-2">
                                     <div className="text-sm font-semibold text-gray-700">Events</div>
@@ -908,6 +1254,135 @@ export default function App() {
                         <button className="px-2 py-1 border rounded text-xs" onClick={()=> setCalendarVisibility({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } })}>All</button>
                         <button className="px-2 py-1 border rounded text-xs" onClick={()=> setCalendarVisibility({ Nick: { work: mode==='work', personal: mode==='home' }, MP: { work: mode==='work', personal: mode==='home' } })}>Mode</button>
                     </div>
+                </div>
+                )}
+
+                {/* Trip Planner (Home only) */}
+                {mode==='home' && activeTab === 'trip' && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
+                    <div className="flex items-center gap-3">
+                        <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">Trip planner</div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                        <input value={tripTitle} onChange={(e)=> setTripTitle(e.target.value)} placeholder="Trip name" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="date" value={tripStart} onChange={(e)=> setTripStart(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                        <input type="date" value={tripEnd} onChange={(e)=> setTripEnd(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                        <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                            const title = (tripTitle||'').trim(); if (!title) return;
+                            const id = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+                            setTrips(prev => [...prev, { id, title, startDate: tripStart || null, endDate: tripEnd || null, items: [] }]);
+                            setActiveTripId(id);
+                            setTripTitle(''); setTripStart(''); setTripEnd('');
+                        }}>Create trip</button>
+                        <select value={activeTripId || ''} onChange={(e)=> setActiveTripId(e.target.value || null)} className="px-3 py-2 border border-gray-300 rounded-lg">
+                            <option value="">Select existing trip...</option>
+                            {trips.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+                        </select>
+                    </div>
+
+                    {activeTripId && (
+                    <div className="space-y-4">
+                        <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                            <div className="grid grid-cols-1 md:grid-cols-6 gap-2 items-center">
+                                <input value={tripItemTitle} onChange={(e)=> setTripItemTitle(e.target.value)} placeholder="Stop title (e.g. Museum)" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-lg" />
+                                <input type="time" value={tripItemTime} onChange={(e)=> setTripItemTime(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                                <div className="md:col-span-2">
+                                    <input value={placeQuery} onChange={(e)=>{
+                                        const q = e.target.value; setPlaceQuery(q);
+                                        if (placesTimerRef.current) clearTimeout(placesTimerRef.current);
+                                        if (!q) { setPlaceResults([]); return; }
+                                        placesTimerRef.current = setTimeout(async ()=>{
+                                            try {
+                                                const resp = await fetch('/api/google-places', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'autocomplete', input: q })});
+                                                const json = await resp.json();
+                                                if (!resp.ok) throw new Error(json?.error || 'Autocomplete failed');
+                                                setPlaceResults(Array.isArray(json?.predictions) ? json.predictions : []);
+                                            } catch(err) { setPlaceResults([]); setRemoteError(err?.message || 'Autocomplete failed'); }
+                                        }, 250);
+                                    }} placeholder="Search a place" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                                    {placeResults.length>0 && (
+                                        <div className="mt-1 max-h-48 overflow-auto border border-gray-200 rounded-lg bg-white text-sm">
+                                            {placeResults.map((p)=> (
+                                                <div key={p.place_id} className="px-3 py-2 hover:bg-gray-50 cursor-pointer" onClick={async ()=>{
+                                                    setPlaceResults([]); setPlaceQuery(p.description);
+                                                    try {
+                                                        const resp = await fetch('/api/google-places', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'details', placeId: p.place_id })});
+                                                        const json = await resp.json();
+                                                        if (!resp.ok) throw new Error(json?.error || 'Place details failed');
+                                                        setSelectedPlace(json?.place || null);
+                                                    } catch(err) { setSelectedPlace(null); setRemoteError(err?.message || 'Place details failed'); }
+                                                }}>{p.description}</div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                                    const title = (tripItemTitle||'').trim(); if (!title || !selectedPlace) return;
+                                    const tid = activeTripId;
+                                    const iid = `${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+                                    setTrips(prev => prev.map(t => t.id===tid ? { ...t, items: [...(t.items||[]), { id: iid, title, time: tripItemTime || null, place: selectedPlace }] } : t));
+                                    setTripItemTitle(''); setTripItemTime(''); setPlaceQuery(''); setSelectedPlace(null);
+                                }}>Add stop</button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                {(trips.find(t=> t.id===activeTripId)?.items || []).map((it, idx)=> (
+                                    <div key={it.id} className="flex items-start gap-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">
+                                        <div className="text-xs font-semibold text-gray-600 w-24">{it.time || '--:--'}</div>
+                                        <div className="min-w-0">
+                                            <div className="text-sm text-gray-800 dark:text-gray-100 truncate">{it.title}</div>
+                                            {it.place && <div className="text-[11px] text-gray-600 truncate">{it.place.name} · {it.place.address}</div>}
+                                        </div>
+                                        <div className="ml-auto flex items-center gap-2">
+                                            <div className="flex items-center gap-1">
+                                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 disabled:opacity-50" disabled={idx===0} onClick={()=> moveTripItem(activeTripId, it.id, 'up')}>↑</button>
+                                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 disabled:opacity-50" disabled={idx===(trips.find(t=> t.id===activeTripId)?.items||[]).length-1} onClick={()=> moveTripItem(activeTripId, it.id, 'down')}>↓</button>
+                                            </div>
+                                            <a className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" target="_blank" rel="noreferrer" href={it.place?.url || (it.place?.location ? `https://www.google.com/maps/search/?api=1&query=${it.place.location.lat},${it.place.location.lng}` : '#')}>Open in Maps</a>
+                                            <button className="text-xs bg-red-100 text-red-700 rounded px-2 py-1" onClick={()=> setTrips(prev => prev.map(t=> t.id===activeTripId ? { ...t, items: (t.items||[]).filter(x=> x.id!==it.id) } : t))}>Delete</button>
+                                        </div>
+                                    </div>
+                                ))}
+                                {(trips.find(t=> t.id===activeTripId)?.items || []).length===0 && (
+                                    <div className="text-xs text-gray-500">No stops yet. Add a place above.</div>
+                                )}
+                            </div>
+                            <div className="h-72 lg:h-96">
+                                <div className="mb-2 flex items-center gap-2 text-xs">
+                                    <span className="text-gray-600">Mode</span>
+                                    <select value={travelMode} onChange={(e)=> setTravelMode(e.target.value)} className="px-2 py-1 border border-gray-300 rounded">
+                                        <option value="driving">Driving</option>
+                                        <option value="walking">Walking</option>
+                                        <option value="bicycling">Bicycling</option>
+                                        <option value="transit">Transit</option>
+                                    </select>
+                                </div>
+                                {(() => {
+                                    const items = (trips.find(t=> t.id===activeTripId)?.items || []);
+                                    if (items.length < 2) return <div className="h-full flex items-center justify-center text-xs text-gray-500 border border-gray-200 rounded-lg">Add 2+ stops to view directions</div>;
+                                    const origin = items[0]?.place?.location;
+                                    const destination = items[items.length-1]?.place?.location;
+                                    const waypoints = items.slice(1, items.length-1).map(it => `${it.place.location.lat},${it.place.location.lng}`).join('|');
+                                    if (!origin || !destination) return <div className="h-full flex items-center justify-center text-xs text-gray-500 border border-gray-200 rounded-lg">Missing coordinates</div>;
+                                    const params = {
+                                        origin: `${origin.lat},${origin.lng}`,
+                                        destination: `${destination.lat},${destination.lng}`,
+                                        mode: 'driving',
+                                    };
+                                    if (waypoints) params.waypoints = waypoints;
+                                    const q = new URLSearchParams(params).toString();
+                                    const key = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || '';
+                                    if (!key) return <div className="h-full flex items-center justify-center text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg">Missing REACT_APP_GOOGLE_MAPS_API_KEY</div>;
+                                    const url = `https://www.google.com/maps/embed/v1/directions?key=${encodeURIComponent(key)}&${q}`;
+                                    return <iframe title="Directions" className="w-full h-full rounded-lg border" loading="lazy" allowFullScreen referrerPolicy="no-referrer-when-downgrade" src={url} />;
+                                })()}
+                            </div>
+                        </div>
+                    </div>
+                    )}
                 </div>
                 )}
 
@@ -1308,6 +1783,52 @@ export default function App() {
                                 </div>
                             );
                         })}
+                    </div>
+                </div>
+                )}
+
+                {/* After Work Planner Tab */}
+                {activeTab === 'afterwork' && (
+                <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
+                    <div className="flex items-center gap-3">
+                        <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">After work planner</div>
+                        <div className="ml-auto flex items-center gap-2">
+                            <input type="date" value={awpDate || ''} onChange={(e)=> setAwpDate(e.target.value)} className="px-2 py-1 border border-gray-300 rounded" />
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-center">
+                            <input value={awpTitle} onChange={(e)=> setAwpTitle(e.target.value)} placeholder="What are you doing?" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-lg" />
+                            <input type="time" min="16:00" max="22:00" value={awpStart} onChange={(e)=> setAwpStart(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                            <input type="time" min="16:00" max="22:00" value={awpEnd} onChange={(e)=> setAwpEnd(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
+                            <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
+                                const title = (awpTitle||'').trim(); if (!title) return;
+                                const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                                setAfterWorkPlans(prev => [...prev, { id, date: awpDate, title, start: awpStart, end: awpEnd }]);
+                                setAwpTitle('');
+                            }}>Add</button>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        {(afterWorkPlans.filter(p=> p.date === awpDate).sort((a,b)=> (a.start||'').localeCompare(b.start))).map((p)=> (
+                            <div key={p.id} className="flex items-center gap-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">
+                                <div className="text-xs font-semibold text-gray-600 w-24">{p.start} - {p.end}</div>
+                                <div className="text-sm text-gray-800 dark:text-gray-100 truncate">{p.title}</div>
+                                <div className="ml-auto flex items-center gap-2">
+                                    <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{
+                                        const title = prompt('Edit title', p.title);
+                                        if (title===null) return;
+                                        setAfterWorkPlans(prev => prev.map(x => x.id===p.id ? { ...x, title: title.trim() } : x));
+                                    }}>Edit</button>
+                                    <button className="text-xs bg-red-100 text-red-700 rounded px-2 py-1" onClick={()=> setAfterWorkPlans(prev => prev.filter(x => x.id!==p.id))}>Delete</button>
+                                </div>
+                            </div>
+                        ))}
+                        {afterWorkPlans.filter(p=> p.date === awpDate).length===0 && (
+                            <div className="text-xs text-gray-500">No plans yet for this day.</div>
+                        )}
                     </div>
                 </div>
                 )}
