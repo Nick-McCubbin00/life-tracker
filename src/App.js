@@ -1370,7 +1370,7 @@ export default function App() {
                                     const params = {
                                         origin: `${origin.lat},${origin.lng}`,
                                         destination: `${destination.lat},${destination.lng}`,
-                                        travelmode: travelMode,
+                                        mode: 'driving',
                                     };
                                     if (waypoints) params.waypoints = waypoints;
                                     const q = new URLSearchParams(params).toString();
