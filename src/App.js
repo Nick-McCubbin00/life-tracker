@@ -607,34 +607,18 @@ export default function App() {
             const allowsType = (type) => calendarTypeFilter==='all' || (calendarTypeFilter==='work' ? (type||'personal')==='work' : (type||'personal')==='personal');
             const allowsOwnerType = (owner, type) => !!(calendarVisibility?.[owner]?.[type==='work'?'work':'personal']);
             const tasksOccurring = tasks.filter(t => t.recurrence !== 'daily' && occursOnDay(t, dayDate) && appliesOwnerFilter(t.owner) && allowsType(t.type||'personal') && allowsOwnerType(t.owner || 'Nick', (t.type||'personal')));
-            // Overdue includes:
-            // - One-time tasks scheduled before today and not completed on their base date
-            // - Recurring tasks that occur today but have an uncompleted prior occurrence
-            const overdueOnce = tasks.filter(t => (t.recurrence||'none')==='none'
-                && appliesOwnerFilter(t.owner)
+            // Only carry to the immediate next day, and only once the previous day has ended
+            const prevDate = new Date(dayDate);
+            prevDate.setDate(prevDate.getDate() - 1);
+            const prevStr = formatDate(prevDate);
+            const showOverdue = prevStr < todayStr; // don't carry from today to tomorrow until day ends
+            const overdue = showOverdue ? tasks.filter(t =>
+                appliesOwnerFilter(t.owner)
                 && allowsType(t.type||'personal')
                 && allowsOwnerType(t.owner || 'Nick', (t.type||'personal'))
-                && (()=>{ try { return new Date(t.date+ 'T00:00:00') < dayDate && !isTaskDoneOnDate(t, t.date); } catch(_) { return false; } })());
-            const overdueRecurring = tasksOccurring.filter(t => {
-                const isToday = formatDate(dayDate) === todayStr;
-                if (isToday) return false;
-                try {
-                    const taskBase = new Date(t.date + 'T00:00:00');
-                    const end = new Date(dayDate);
-                    end.setDate(end.getDate() - 1);
-                    for (let d = new Date(taskBase); d <= end; d.setDate(d.getDate() + 1)) {
-                        if (occursOnDay(t, d)) {
-                            const ds = formatDate(d);
-                            if (!isTaskDoneOnDate(t, ds)) return true;
-                        }
-                    }
-                    return false;
-                } catch(_) { return false; }
-            });
-            const overdue = [...new Set([...
-                overdueOnce,
-                ...overdueRecurring,
-            ])];
+                && occursOnDay(t, prevDate)
+                && !isTaskDoneOnDate(t, prevStr)
+            ) : [];
             const tasksToday = tasksOccurring.filter(t => !overdue.includes(t));
             const eventsToday = events.filter(e => e.date === dayStr && appliesOwnerFilter(e.owner) && allowsType(e.type||'personal') && allowsOwnerType(e.owner || 'Nick', (e.type||'personal')));
             const requestsToday = requests.filter(r => r.status === 'approved' && r.approvedDueDate && formatDate(r.approvedDueDate) === dayStr);
@@ -1044,62 +1028,130 @@ export default function App() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 <div className="space-y-2">
                                     <div className="text-sm font-semibold text-gray-700">Tasks</div>
-                                    {tasks.filter(t=> occursOnDay(t, parseYmd(selectedDayStr)) && appliesOwnerFilter(t.owner)).map((t)=>{
-                                        const checked = isTaskDoneOnDate(t, selectedDayStr);
-                                        const isEditing = editingTaskId === t.id;
+                                    {(() => {
+                                        const dayDate = parseYmd(selectedDayStr);
+                                        const prevDate = new Date(dayDate);
+                                        prevDate.setDate(prevDate.getDate() - 1);
+                                        const prevStr = formatDate(prevDate);
+                                        const showOverdue = prevStr < formatDate(new Date());
+                                        const occ = tasks.filter(t=> occursOnDay(t, dayDate) && appliesOwnerFilter(t.owner));
+                                        const overdue = showOverdue ? tasks.filter(t => occursOnDay(t, prevDate) && !isTaskDoneOnDate(t, prevStr) && appliesOwnerFilter(t.owner)) : [];
+                                        const todayList = occ.filter(t => !overdue.includes(t));
                                         return (
-                                            <div key={t.id} className="rounded p-2 text-xs" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FEF3C7' : '#EFF6FF', border: '1px solid ' + ((t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE') }}>
-                                                {!isEditing ? (
-                                                    <div className="flex items-start gap-2">
-                                                        <input type="checkbox" className="mt-0.5" checked={checked} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
-                                                        <div className="min-w-0">
-                                                            <div className={checked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={t.title}>{t.title}</div>
-                                                            {t.notes && <div className="text-[11px] text-gray-600 truncate" title={t.notes}>{t.notes}</div>}
-                                                            <div className="flex items-center gap-2 text-[10px]">
-                                                                {t.recurrence && t.recurrence!=='none' && <span className="text-blue-700">({t.recurrence})</span>}
-                                                                <span className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FDE68A' : '#DBEAFE', borderColor: (t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE', color: '#374151' }}>{(t.type||'personal')==='work' ? 'Work' : 'Personal'}</span>
-                                                            </div>
+                                            <>
+                                                {overdue.length>0 && <div className="text-xs font-semibold text-red-600">OVERDUE</div>}
+                                                {overdue.map((t)=>{
+                                                    const checked = isTaskDoneOnDate(t, selectedDayStr);
+                                                    const isEditing = editingTaskId === t.id;
+                                                    return (
+                                                        <div key={`ov-${t.id}`} className="rounded p-2 text-xs" style={{ backgroundColor: '#FEE2E2', border: '1px solid #FCA5A5', color: '#991B1B' }}>
+                                                            {!isEditing ? (
+                                                                <div className="flex items-start gap-2">
+                                                                    <input type="checkbox" className="mt-0.5" checked={checked} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
+                                                                    <div className="min-w-0">
+                                                                        <div className={checked ? 'line-through text-red-400 truncate' : 'text-red-700 truncate'} title={t.title}>{t.title}</div>
+                                                                        {t.notes && <div className="text-[11px] text-red-700 truncate" title={t.notes}>{t.notes}</div>}
+                                                                        <div className="flex items-center gap-2 text-[10px]">
+                                                                            {t.recurrence && t.recurrence!=='none' && <span className="text-red-700">({t.recurrence})</span>}
+                                                                            <span className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: '#FECACA', borderColor: '#FCA5A5', color: '#7F1D1D' }}>{(t.type||'personal')==='work' ? 'Work' : 'Personal'}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="ml-auto flex items-center gap-2">
+                                                                        <button className="text-red-700 hover:text-red-900" onClick={()=>{ setEditingTaskId(t.id); setEditTaskTitle(t.title); setEditTaskNotes(t.notes||''); }} title="Edit">✎</button>
+                                                                        <button className="text-red-700 hover:text-red-900" onClick={()=>deleteTask(t.id)} title="Delete"><Trash2 size={12}/></button>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="space-y-2">
+                                                                    <input value={editTaskTitle} onChange={(e)=>setEditTaskTitle(e.target.value)} className="w-full px-2 py-1 border border-red-200 rounded text-xs" placeholder="Task title" />
+                                                                    <textarea value={editTaskNotes} onChange={(e)=>setEditTaskNotes(e.target.value)} rows={2} className="w-full px-2 py-1 border border-red-200 rounded text-xs" placeholder="Notes (optional)" />
+                                                                    <div className="flex items-center gap-2">
+                                                                        <label className="text-[11px] text-red-700">Repeat</label>
+                                                                        <select value={t.recurrence||'none'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, recurrence: e.target.value } : x))} className="px-2 py-1 border border-red-200 rounded text-xs">
+                                                                            <option value="none">One-time</option>
+                                                                            <option value="daily">Daily</option>
+                                                                            <option value="weekly">Weekly</option>
+                                                                            <option value="biweekly">Biweekly</option>
+                                                                            <option value="monthly">Monthly</option>
+                                                                        </select>
+                                                                        <label className="text-[11px] text-red-700 ml-2">Type</label>
+                                                                        <select value={t.type||'personal'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, type: e.target.value } : x))} className="px-2 py-1 border border-red-200 rounded text-xs">
+                                                                            <option value="personal">Personal</option>
+                                                                            <option value="work">Work</option>
+                                                                        </select>
+                                                                        <div className="ml-auto flex items-center gap-2">
+                                                                            <button className="text-xs bg-red-600 text-white rounded px-2 py-1" onClick={()=>{
+                                                                                const title = editTaskTitle.trim(); if (!title) return;
+                                                                                setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, title, notes: editTaskNotes } : x));
+                                                                                setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes('');
+                                                                            }}>Save</button>
+                                                                            <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes(''); }}>Cancel</button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                        <div className="ml-auto flex items-center gap-2">
-                                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>{ setEditingTaskId(t.id); setEditTaskTitle(t.title); setEditTaskNotes(t.notes||''); }} title="Edit">✎</button>
-                                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)} title="Delete"><Trash2 size={12}/></button>
+                                                    );
+                                                })}
+                                                {todayList.map((t)=>{
+                                                    const checked = isTaskDoneOnDate(t, selectedDayStr);
+                                                    const isEditing = editingTaskId === t.id;
+                                                    return (
+                                                        <div key={t.id} className="rounded p-2 text-xs" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FEF3C7' : '#EFF6FF', border: '1px solid ' + ((t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE') }}>
+                                                            {!isEditing ? (
+                                                                <div className="flex items-start gap-2">
+                                                                    <input type="checkbox" className="mt-0.5" checked={checked} onChange={()=>toggleTaskDone(t.id, selectedDayStr)} />
+                                                                    <div className="min-w-0">
+                                                                        <div className={checked ? 'line-through text-gray-500 truncate' : 'text-gray-800 truncate'} title={t.title}>{t.title}</div>
+                                                                        {t.notes && <div className="text-[11px] text-gray-600 truncate" title={t.notes}>{t.notes}</div>}
+                                                                        <div className="flex items-center gap-2 text-[10px]">
+                                                                            {t.recurrence && t.recurrence!=='none' && <span className="text-blue-700">({t.recurrence})</span>}
+                                                                            <span className="px-1.5 py-0.5 rounded border" style={{ backgroundColor: (t.type||'personal')==='work' ? '#FDE68A' : '#DBEAFE', borderColor: (t.type||'personal')==='work' ? '#FCD34D' : '#BFDBFE', color: '#374151' }}>{(t.type||'personal')==='work' ? 'Work' : 'Personal'}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="ml-auto flex items-center gap-2">
+                                                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>{ setEditingTaskId(t.id); setEditTaskTitle(t.title); setEditTaskNotes(t.notes||''); }} title="Edit">✎</button>
+                                                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteTask(t.id)} title="Delete"><Trash2 size={12}/></button>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="space-y-2">
+                                                                    <input value={editTaskTitle} onChange={(e)=>setEditTaskTitle(e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Task title" />
+                                                                    <textarea value={editTaskNotes} onChange={(e)=>setEditTaskNotes(e.target.value)} rows={2} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Notes (optional)" />
+                                                                    <div className="flex items-center gap-2">
+                                                                        <label className="text-[11px] text-gray-700">Repeat</label>
+                                                                        <select value={t.recurrence||'none'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, recurrence: e.target.value } : x))} className="px-2 py-1 border border-blue-200 rounded text-xs">
+                                                                            <option value="none">One-time</option>
+                                                                            <option value="daily">Daily</option>
+                                                                            <option value="weekly">Weekly</option>
+                                                                            <option value="biweekly">Biweekly</option>
+                                                                            <option value="monthly">Monthly</option>
+                                                                        </select>
+                                                                        <label className="text-[11px] text-gray-700 ml-2">Type</label>
+                                                                        <select value={t.type||'personal'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, type: e.target.value } : x))} className="px-2 py-1 border border-blue-200 rounded text-xs">
+                                                                            <option value="personal">Personal</option>
+                                                                            <option value="work">Work</option>
+                                                                        </select>
+                                                                        <div className="ml-auto flex items-center gap-2">
+                                                                            <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>{
+                                                                                const title = editTaskTitle.trim(); if (!title) return;
+                                                                                setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, title, notes: editTaskNotes } : x));
+                                                                                setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes('');
+                                                                            }}>Save</button>
+                                                                            <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes(''); }}>Cancel</button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="space-y-2">
-                                                        <input value={editTaskTitle} onChange={(e)=>setEditTaskTitle(e.target.value)} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Task title" />
-                                                        <textarea value={editTaskNotes} onChange={(e)=>setEditTaskNotes(e.target.value)} rows={2} className="w-full px-2 py-1 border border-blue-200 rounded text-xs" placeholder="Notes (optional)" />
-                                                        <div className="flex items-center gap-2">
-                                                            <label className="text-[11px] text-gray-700">Repeat</label>
-                                                            <select value={t.recurrence||'none'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, recurrence: e.target.value } : x))} className="px-2 py-1 border border-blue-200 rounded text-xs">
-                                                                <option value="none">One-time</option>
-                                                                <option value="daily">Daily</option>
-                                                                <option value="weekly">Weekly</option>
-                                                                <option value="biweekly">Biweekly</option>
-                                                                <option value="monthly">Monthly</option>
-                                                            </select>
-                                                            <label className="text-[11px] text-gray-700 ml-2">Type</label>
-                                                            <select value={t.type||'personal'} onChange={(e)=> setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, type: e.target.value } : x))} className="px-2 py-1 border border-blue-200 rounded text-xs">
-                                                                <option value="personal">Personal</option>
-                                                                <option value="work">Work</option>
-                                                            </select>
-                                                            <div className="ml-auto flex items-center gap-2">
-                                                                <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>{
-                                                                    const title = editTaskTitle.trim(); if (!title) return;
-                                                                    setTasks((prev)=> prev.map((x)=> x.id===t.id ? { ...x, title, notes: editTaskNotes } : x));
-                                                                    setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes('');
-                                                                }}>Save</button>
-                                                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{ setEditingTaskId(null); setEditTaskTitle(''); setEditTaskNotes(''); }}>Cancel</button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                    );
+                                                })}
+                                                {occ.length===0 && (
+                                                    <div className="text-xs text-gray-500">No tasks for this day.</div>
                                                 )}
-                                            </div>
+                                            </>
                                         );
-                                    })}
-                                    {tasks.filter(t=> occursOnDay(t, parseYmd(selectedDayStr))).length===0 && (
-                                        <div className="text-xs text-gray-500">No tasks for this day.</div>
-                                    )}
+                                    })()}
                                 </div>
                                 <div className="space-y-2">
                                     <div className="text-sm font-semibold text-gray-700">Events</div>
