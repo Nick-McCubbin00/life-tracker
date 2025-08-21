@@ -40,7 +40,15 @@ module.exports = async function handler(req, res) {
       url.searchParams.set('types', 'geocode');
       if (sessiontoken) url.searchParams.set('sessiontoken', sessiontoken);
       const r = await fetch(url.toString());
+      if (!r.ok) {
+        const text = await r.text().catch(()=> '');
+        return res.status(502).json({ error: `Places Autocomplete HTTP ${r.status}: ${text || 'Upstream error'}` });
+      }
       const json = await r.json();
+      const status = json?.status;
+      if (status && status !== 'OK' && status !== 'ZERO_RESULTS') {
+        return res.status(400).json({ error: `Places Autocomplete error: ${status}${json?.error_message ? ' - ' + json.error_message : ''}` });
+      }
       return res.status(200).json({ predictions: json?.predictions || [] });
     }
     if (type === 'details') {
@@ -53,7 +61,15 @@ module.exports = async function handler(req, res) {
       url.searchParams.set('fields', 'place_id,name,formatted_address,geometry/location,url');
       if (sessiontoken) url.searchParams.set('sessiontoken', sessiontoken);
       const r = await fetch(url.toString());
+      if (!r.ok) {
+        const text = await r.text().catch(()=> '');
+        return res.status(502).json({ error: `Place Details HTTP ${r.status}: ${text || 'Upstream error'}` });
+      }
       const json = await r.json();
+      const status = json?.status;
+      if (status && status !== 'OK') {
+        return res.status(400).json({ error: `Place Details error: ${status}${json?.error_message ? ' - ' + json.error_message : ''}` });
+      }
       const resPlace = json?.result || {};
       const out = {
         placeId: resPlace.place_id,

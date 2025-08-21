@@ -123,6 +123,26 @@ export default function App() {
     const [placeQuery, setPlaceQuery] = useState('');
     const [placeResults, setPlaceResults] = useState([]);
     const [selectedPlace, setSelectedPlace] = useState(null);
+    const placesTimerRef = useRef(null);
+    const [travelMode, setTravelMode] = useState('driving');
+
+    const updateActiveTrip = (updater) => {
+        setTrips((prev) => prev.map((t) => t.id === activeTripId ? updater(t) : t));
+    };
+    const moveTripItem = (tripId, itemId, dir) => {
+        setTrips((prev) => prev.map((t) => {
+            if (t.id !== tripId) return t;
+            const items = Array.isArray(t.items) ? [...t.items] : [];
+            const idx = items.findIndex((x) => x.id === itemId);
+            if (idx < 0) return t;
+            const swapWith = dir === 'up' ? idx - 1 : idx + 1;
+            if (swapWith < 0 || swapWith >= items.length) return t;
+            const tmp = items[idx];
+            items[idx] = items[swapWith];
+            items[swapWith] = tmp;
+            return { ...t, items };
+        }));
+    };
 
     // Google Calendar integration state
     const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '';
@@ -949,7 +969,8 @@ export default function App() {
                             {remoteError && (
                                 <div className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
                                     <AlertTriangle size={14} />
-                                    <span>{remoteError}</span>
+                                    <span className="flex-1">{remoteError}</span>
+                                    <button className="ml-2 text-red-700 hover:text-red-900" onClick={()=> setRemoteError('')}>Dismiss</button>
                                 </div>
                             )}
                     </div>
@@ -1267,14 +1288,18 @@ export default function App() {
                                 <input value={tripItemTitle} onChange={(e)=> setTripItemTitle(e.target.value)} placeholder="Stop title (e.g. Museum)" className="md:col-span-2 px-3 py-2 border border-gray-300 rounded-lg" />
                                 <input type="time" value={tripItemTime} onChange={(e)=> setTripItemTime(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg" />
                                 <div className="md:col-span-2">
-                                    <input value={placeQuery} onChange={async (e)=>{
+                                    <input value={placeQuery} onChange={(e)=>{
                                         const q = e.target.value; setPlaceQuery(q);
+                                        if (placesTimerRef.current) clearTimeout(placesTimerRef.current);
                                         if (!q) { setPlaceResults([]); return; }
-                                        try {
-                                            const resp = await fetch('/api/google-places', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'autocomplete', input: q })});
-                                            const json = await resp.json();
-                                            setPlaceResults(Array.isArray(json?.predictions) ? json.predictions : []);
-                                        } catch(_) { setPlaceResults([]); }
+                                        placesTimerRef.current = setTimeout(async ()=>{
+                                            try {
+                                                const resp = await fetch('/api/google-places', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'autocomplete', input: q })});
+                                                const json = await resp.json();
+                                                if (!resp.ok) throw new Error(json?.error || 'Autocomplete failed');
+                                                setPlaceResults(Array.isArray(json?.predictions) ? json.predictions : []);
+                                            } catch(err) { setPlaceResults([]); setRemoteError(err?.message || 'Autocomplete failed'); }
+                                        }, 250);
                                     }} placeholder="Search a place" className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                                     {placeResults.length>0 && (
                                         <div className="mt-1 max-h-48 overflow-auto border border-gray-200 rounded-lg bg-white text-sm">
@@ -1284,8 +1309,9 @@ export default function App() {
                                                     try {
                                                         const resp = await fetch('/api/google-places', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'details', placeId: p.place_id })});
                                                         const json = await resp.json();
+                                                        if (!resp.ok) throw new Error(json?.error || 'Place details failed');
                                                         setSelectedPlace(json?.place || null);
-                                                    } catch(_) { setSelectedPlace(null); }
+                                                    } catch(err) { setSelectedPlace(null); setRemoteError(err?.message || 'Place details failed'); }
                                                 }}>{p.description}</div>
                                             ))}
                                         </div>
@@ -1303,7 +1329,7 @@ export default function App() {
 
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                {(trips.find(t=> t.id===activeTripId)?.items || []).map((it)=> (
+                                {(trips.find(t=> t.id===activeTripId)?.items || []).map((it, idx)=> (
                                     <div key={it.id} className="flex items-start gap-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2">
                                         <div className="text-xs font-semibold text-gray-600 w-24">{it.time || '--:--'}</div>
                                         <div className="min-w-0">
@@ -1311,6 +1337,10 @@ export default function App() {
                                             {it.place && <div className="text-[11px] text-gray-600 truncate">{it.place.name} · {it.place.address}</div>}
                                         </div>
                                         <div className="ml-auto flex items-center gap-2">
+                                            <div className="flex items-center gap-1">
+                                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 disabled:opacity-50" disabled={idx===0} onClick={()=> moveTripItem(activeTripId, it.id, 'up')}>↑</button>
+                                                <button className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1 disabled:opacity-50" disabled={idx===(trips.find(t=> t.id===activeTripId)?.items||[]).length-1} onClick={()=> moveTripItem(activeTripId, it.id, 'down')}>↓</button>
+                                            </div>
                                             <a className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-1" target="_blank" rel="noreferrer" href={it.place?.url || (it.place?.location ? `https://www.google.com/maps/search/?api=1&query=${it.place.location.lat},${it.place.location.lng}` : '#')}>Open in Maps</a>
                                             <button className="text-xs bg-red-100 text-red-700 rounded px-2 py-1" onClick={()=> setTrips(prev => prev.map(t=> t.id===activeTripId ? { ...t, items: (t.items||[]).filter(x=> x.id!==it.id) } : t))}>Delete</button>
                                         </div>
@@ -1321,6 +1351,15 @@ export default function App() {
                                 )}
                             </div>
                             <div className="h-72 lg:h-96">
+                                <div className="mb-2 flex items-center gap-2 text-xs">
+                                    <span className="text-gray-600">Mode</span>
+                                    <select value={travelMode} onChange={(e)=> setTravelMode(e.target.value)} className="px-2 py-1 border border-gray-300 rounded">
+                                        <option value="driving">Driving</option>
+                                        <option value="walking">Walking</option>
+                                        <option value="bicycling">Bicycling</option>
+                                        <option value="transit">Transit</option>
+                                    </select>
+                                </div>
                                 {(() => {
                                     const items = (trips.find(t=> t.id===activeTripId)?.items || []);
                                     if (items.length < 2) return <div className="h-full flex items-center justify-center text-xs text-gray-500 border border-gray-200 rounded-lg">Add 2+ stops to view directions</div>;
@@ -1328,13 +1367,16 @@ export default function App() {
                                     const destination = items[items.length-1]?.place?.location;
                                     const waypoints = items.slice(1, items.length-1).map(it => `${it.place.location.lat},${it.place.location.lng}`).join('|');
                                     if (!origin || !destination) return <div className="h-full flex items-center justify-center text-xs text-gray-500 border border-gray-200 rounded-lg">Missing coordinates</div>;
-                                    const q = new URLSearchParams({
+                                    const params = {
                                         origin: `${origin.lat},${origin.lng}`,
                                         destination: `${destination.lat},${destination.lng}`,
-                                        travelmode: 'driving',
-                                        waypoints,
-                                    }).toString();
-                                    const url = `https://www.google.com/maps/embed/v1/directions?key=${encodeURIComponent(process.env.REACT_APP_GOOGLE_MAPS_API_KEY || '')}&${q}`;
+                                        travelmode: travelMode,
+                                    };
+                                    if (waypoints) params.waypoints = waypoints;
+                                    const q = new URLSearchParams(params).toString();
+                                    const key = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || '';
+                                    if (!key) return <div className="h-full flex items-center justify-center text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg">Missing REACT_APP_GOOGLE_MAPS_API_KEY</div>;
+                                    const url = `https://www.google.com/maps/embed/v1/directions?key=${encodeURIComponent(key)}&${q}`;
                                     return <iframe title="Directions" className="w-full h-full rounded-lg border" loading="lazy" allowFullScreen referrerPolicy="no-referrer-when-downgrade" src={url} />;
                                 })()}
                             </div>
