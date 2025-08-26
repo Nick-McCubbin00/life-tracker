@@ -26,6 +26,7 @@ export default function App() {
 
     // Auth / User & global filters
     const [currentUser, setCurrentUser] = useState(null);
+    const isHeather = currentUser === 'Heather';
     const [ownerFilter, setOwnerFilter] = useState('all'); // 'all' | 'Nick' | 'MP'
     const [mode, setMode] = useState('work'); // 'work' | 'home'
     const [theme, setTheme] = useState('light');
@@ -186,6 +187,17 @@ export default function App() {
     }, [mode]);
 
     useEffect(() => {}, [currentUser]);
+
+    // Restrict Heather's view to Nick's work calendar and Requests tab
+    useEffect(() => {
+        if (currentUser === 'Heather') {
+            if (mode !== 'work') setMode('work');
+            setActiveTab((prev) => (prev === 'calendar' || prev === 'requests') ? prev : 'requests');
+            if (ownerFilter !== 'Nick') setOwnerFilter('Nick');
+            if (calendarTypeFilter !== 'work') setCalendarTypeFilter('work');
+            setCalendarVisibility({ Nick: { work: true, personal: false }, MP: { work: false, personal: false } });
+        }
+    }, [currentUser, mode, ownerFilter, calendarTypeFilter]);
 
     useEffect(() => {}, []);
 
@@ -683,7 +695,7 @@ export default function App() {
                             <div key={`t-overdue-${t.id}`} className="w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1" style={{ backgroundColor: '#ef4444' }}>
                                 <span className={`truncate ${isTaskDoneOnDate(t, dayStr) ? 'line-through' : ''}`}>{t.title}</span>
                                 {t.recurrence && t.recurrence !== 'none' && <span className="ml-1 opacity-80">({t.recurrence})</span>}
-                                <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>
+                                {!isHeather && <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>}
                             </div>
                         ))}
                         {overdue.length>0 && (
@@ -707,7 +719,7 @@ export default function App() {
                             <div key={`rq-${r.id}`} className="w-full text-[10px] rounded-lg shadow px-1.5 py-0.5 truncate" style={{ backgroundColor: '#ffd6e7', color: '#7a2946' }} title={`${r.title} (${r.priority})`}>
                                 <div className="flex items-center justify-between">
                                     <span className="font-medium truncate">{r.title}</span>
-                                    <button className="hover:bg-black/5 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteRequest(r.id); }}><Trash2 size={12} /></button>
+                                    {!isHeather && <button className="hover:bg-black/5 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteRequest(r.id); }}><Trash2 size={12} /></button>}
                                     </div>
                                 </div>
                         ))}
@@ -739,6 +751,7 @@ export default function App() {
                         <div className="flex items-center justify-center gap-3">
                             <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=> setCurrentUser('Nick')}>Nick</button>
                             <button className="px-4 py-2 rounded-lg bg-gray-800 text-white" onClick={()=> setCurrentUser('MP')}>MP</button>
+                            <button className="px-4 py-2 rounded-lg bg-amber-600 text-white" onClick={()=> setCurrentUser('Heather')}>Heather</button>
                         </div>
                         <div className="mt-4 flex items-center justify-center gap-2 text-xs">
                             <span className="text-gray-600 dark:text-gray-300">Theme</span>
@@ -754,7 +767,9 @@ export default function App() {
                 <div className="flex items-center justify-center">
                     <div className="flex items-center justify-center gap-2">
                         <button onClick={()=> setMode('work')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='work' ? 'bg-amber-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Work</button>
-                        <button onClick={()=> setMode('home')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='home' ? 'bg-blue-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Home</button>
+                        {!isHeather && (
+                            <button onClick={()=> setMode('home')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='home' ? 'bg-blue-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Home</button>
+                        )}
                     </div>
                 </div>
 
@@ -764,36 +779,44 @@ export default function App() {
                     <div className="flex flex-wrap gap-2 items-center">
                         <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
-                        <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Tasks</button>
-                        <button onClick={() => setActiveTab('afterwork')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='afterwork' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Clipboard size={16} /> After work planner</button>
+                        {!isHeather && (
+                            <>
+                                <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Tasks</button>
+                                <button onClick={() => setActiveTab('afterwork')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='afterwork' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Clipboard size={16} /> After work planner</button>
+                            </>
+                        )}
                         <div className="ml-auto flex items-center gap-2">
                             {/* Google Calendar controls */}
-                            <div className="flex items-center gap-2">
-                                {!googleAuthorized ? (
-                                    <button
-                                        onClick={async ()=>{ try { await ensureGoogleToken(); await listGoogleCalendars(); } catch(_){} }}
-                                        className="text-xs rounded px-2 py-1 bg-green-600 text-white hover:bg-green-700"
-                                    >Connect Google</button>
-                                ) : (
-                                    <>
-                                        <select value={googleWorkCalendarId} onChange={(e)=> setGoogleWorkCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
-                                            <option value="">Work cal…</option>
-                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
-                                        </select>
-                                        <select value={googleHomeCalendarId} onChange={(e)=> setGoogleHomeCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
-                                            <option value="">Home cal…</option>
-                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
-                                        </select>
-                                        <button onClick={importFromGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Import'}</button>
-                                        <button onClick={exportToGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Export'}</button>
-                                    </>
-                                )}
-                            </div>
-                            <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
-                                <option value="all">All</option>
-                                <option value="Nick">Nick</option>
-                                <option value="MP">MP</option>
-                            </select>
+                            {!isHeather && (
+                                <div className="flex items-center gap-2">
+                                    {!googleAuthorized ? (
+                                        <button
+                                            onClick={async ()=>{ try { await ensureGoogleToken(); await listGoogleCalendars(); } catch(_){} }}
+                                            className="text-xs rounded px-2 py-1 bg-green-600 text-white hover:bg-green-700"
+                                        >Connect Google</button>
+                                    ) : (
+                                        <>
+                                            <select value={googleWorkCalendarId} onChange={(e)=> setGoogleWorkCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                                <option value="">Work cal…</option>
+                                                {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                            </select>
+                                            <select value={googleHomeCalendarId} onChange={(e)=> setGoogleHomeCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                                <option value="">Home cal…</option>
+                                                {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                            </select>
+                                            <button onClick={importFromGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Import'}</button>
+                                            <button onClick={exportToGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Export'}</button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+                            {!isHeather && (
+                                <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                    <option value="all">All</option>
+                                    <option value="Nick">Nick</option>
+                                    <option value="MP">MP</option>
+                                </select>
+                            )}
                             <button onClick={()=> setTheme(theme==='light'?'dark':'light')} className="p-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">
                                 {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
                             </button>
@@ -802,6 +825,7 @@ export default function App() {
                             ) : (
                                 <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
                             )}
+                            {!isHeather && (
                             <button
                                 disabled={isBackingUp}
                                 onClick={async ()=>{
@@ -820,6 +844,8 @@ export default function App() {
                                 }}
                                 className={`text-xs rounded px-2 py-1 ${isBackingUp ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
                             >{isBackingUp ? 'Backing…' : 'Backup'}</button>
+                            )}
+                            {!isHeather && (
                             <button
                                 disabled={isRestoring}
                                 onClick={async ()=>{
@@ -844,6 +870,7 @@ export default function App() {
                                 }}
                                 className={`text-xs rounded px-2 py-1 ${isRestoring ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
                             >{isRestoring ? 'Restoring…' : 'Restore'}</button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1048,6 +1075,8 @@ export default function App() {
                                             </select>
                                         </div>
                                     )}
+                                    {!isHeather && (
+                                    <>
                                     <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder={newItemType==='task'?"Add task":"Add event"} className="md:col-span-3 px-3 py-2 border border-gray-300 rounded-lg" />
                                     <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
                                         const t = (newItemTitle||'').trim(); if (!t) return;
@@ -1058,6 +1087,8 @@ export default function App() {
                                         setNewTaskType('personal');
                                         setNewEventType('work');
                                     }}>Add</button>
+                                    </>
+                                    )}
                                 </div>
                                 </div>
 
@@ -1237,18 +1268,18 @@ export default function App() {
                 {activeTab==='calendar' && (
                 <div className="bg-white dark:bg-gray-900 p-2 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-3">
                     <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">Calendar Filter:</div>
-                    <select value={calendarTypeFilter} onChange={(e)=> setCalendarTypeFilter(e.target.value)} className="px-2 py-1 text-xs border border-gray-300 rounded">
+                    <select value={calendarTypeFilter} onChange={(e)=> setCalendarTypeFilter(e.target.value)} className="px-2 py-1 text-xs border border-gray-300 rounded" disabled={isHeather}>
                         <option value="work">Work</option>
                         <option value="home">Home</option>
                         <option value="all">All</option>
                     </select>
                     <div className="flex items-center gap-4 text-xs">
                         <div className="font-semibold text-gray-700 dark:text-gray-300">Nick</div>
-                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, work: e.target.checked }}))} /> Work</label>
-                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, personal: e.target.checked }}))} /> Home</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, work: e.target.checked }}))} disabled={isHeather} /> Work</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, personal: e.target.checked }}))} disabled={isHeather} /> Home</label>
                         <div className="font-semibold text-gray-700 dark:text-gray-300 ml-4">MP</div>
-                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, work: e.target.checked }}))} /> Work</label>
-                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, personal: e.target.checked }}))} /> Home</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, work: e.target.checked }}))} disabled={isHeather} /> Work</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, personal: e.target.checked }}))} disabled={isHeather} /> Home</label>
                     </div>
                     <div className="ml-auto flex items-center gap-2">
                         <button className="px-2 py-1 border rounded text-xs" onClick={()=> setCalendarVisibility({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } })}>All</button>
@@ -1594,21 +1625,25 @@ export default function App() {
                                 <input value={bossReqDetails} onChange={(e)=>setBossReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
                                 <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={()=>{
                                     if (!bossReqTitle.trim()) return;
+                                    // Ensure owner is Nick regardless of current user (Heather creates for Nick)
+                                    const prevUser = currentUser;
+                                    if (isHeather) setCurrentUser('Nick');
                                     handleAddRequest(bossReqDueDate || formatDate(new Date()), bossReqTitle, bossReqPriority, bossReqDetails, 'boss');
+                                    if (isHeather) setCurrentUser(prevUser);
                                     setBossReqTitle(''); setBossReqPriority('medium'); setBossReqDueDate(''); setBossReqDetails('');
                                 }}>Add</button>
                             </div>
                             <div className="space-y-2">
-                                {requests.filter(r=> r.source==='boss' && appliesOwnerFilter(r.owner)).map((r)=>(
+                                {requests.filter(r=> r.source==='boss' && (isHeather ? r.owner==='Nick' : appliesOwnerFilter(r.owner))).map((r)=>(
                                     <div key={`boss-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-amber-200">
                                         <div>
                                             <div className="font-semibold text-gray-800">{r.title}</div>
                                             <div className="text-[11px] text-gray-600 capitalize">{r.priority}</div>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            {r.status==='pending' && <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>}
-                                            {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>completeRequest(r.id)}>Done</button>}
-                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={12}/></button>
+                                            {!isHeather && r.status==='pending' && <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>}
+                                            {!isHeather && r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>completeRequest(r.id)}>Done</button>}
+                                            {!isHeather && <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={12}/></button>}
                                         </div>
                                     </div>
                                 ))}
@@ -1619,6 +1654,7 @@ export default function App() {
                     <>
                         <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Fiancé Requests</div>
                         <div className="text-xs text-gray-500">Add, approve, or complete requests. Approved requests appear on the calendar (light pink) on their approved date.</div>
+                        {!isHeather && (
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                             <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
                                 <input value={reqFormTitle} onChange={(e)=>setReqFormTitle(e.target.value)} placeholder="Title" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
@@ -1648,8 +1684,9 @@ export default function App() {
                                 }}>Add</button>
                             </div>
                         </div>
+                        )}
                         <div className="grid grid-cols-1 gap-2">
-                            {requests.filter(r=> r.source!=='boss' && appliesOwnerFilter(r.owner)).sort((a,b)=>{
+                            {requests.filter(r=> r.source!=='boss' && (isHeather ? r.owner==='Nick' : appliesOwnerFilter(r.owner))).sort((a,b)=>{
                                 const pri = { high: 0, medium: 1, low: 2 };
                                 return pri[a.priority]-pri[b.priority];
                             }).map((r)=>(
@@ -1659,14 +1696,14 @@ export default function App() {
                                         <div className="text-xs text-[#7a2946]">Priority: <span className="capitalize">{r.priority}</span>{r.requestedDueDate ? ` · requested ${new Date(r.requestedDueDate).toLocaleDateString()}` : ''}{r.approvedDueDate ? ` · approved ${new Date(r.approvedDueDate).toLocaleDateString()}` : ''}</div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        {r.status==='pending' && (
+                                        {!isHeather && r.status==='pending' && (
                                             <>
                                                 <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>approveRequest(r.id, e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs" />
                                                 <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>
                                             </>
                                         )}
-                                        {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
-                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>
+                                        {!isHeather && r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
+                                        {!isHeather && <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>}
                                     </div>
                                 </div>
                             ))}
@@ -1676,7 +1713,7 @@ export default function App() {
                 )}
 
                 {/* Work Tab (Work mode only) */}
-                {mode==='work' && activeTab === 'work' && (
+                {mode==='work' && activeTab === 'work' && !isHeather && (
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-4">
                     <div className="flex items-center gap-2">
                         <Briefcase size={18} />
@@ -1788,7 +1825,7 @@ export default function App() {
                 )}
 
                 {/* After Work Planner Tab */}
-                {activeTab === 'afterwork' && (
+                {activeTab === 'afterwork' && !isHeather && (
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
                     <div className="flex items-center gap-3">
                         <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">After work planner</div>
