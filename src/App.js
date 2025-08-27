@@ -335,7 +335,6 @@ export default function App() {
     // Immediate save helper to persist state changes without waiting for debounce
     const saveStateImmediate = async (overrides = {}) => {
         try {
-            if (!usingBlob) return;
             const nowIso = new Date().toISOString();
             const body = {
                 events,
@@ -562,7 +561,9 @@ export default function App() {
         setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, ...updates } : r));
     };
     const denyRequest = (requestId) => {
-        setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: 'denied', approved: false } : r));
+        const next = (requests || []).map((r) => r.id === requestId ? { ...r, status: 'denied', approved: false } : r);
+        setRequests(next);
+        saveStateImmediate({ requests: next });
     };
     const parseYmd = (ymd) => {
         if (!ymd) return new Date();
@@ -882,7 +883,7 @@ export default function App() {
                     <div className="flex items-center justify-center gap-2">
                         <button onClick={()=> setMode('work')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='work' ? 'bg-amber-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Work</button>
                         {!isHeather && (
-                            <button onClick={()=> setMode('home')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='home' ? 'bg-blue-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Home</button>
+                        <button onClick={()=> setMode('home')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='home' ? 'bg-blue-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Home</button>
                         )}
                     </div>
                 </div>
@@ -892,46 +893,46 @@ export default function App() {
                 <div className="bg-white dark:bg-gray-900 p-2 rounded-2xl shadow border border-gray-200 dark:border-gray-700">
                     <div className="flex flex-wrap gap-2 items-center">
                         {!isAccountManager && (
-                            <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
+                        <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
                         )}
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
                         {!(isHeather || isAccountManager) && (
                             <>
-                                <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Tasks</button>
-                                <button onClick={() => setActiveTab('afterwork')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='afterwork' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Clipboard size={16} /> After work planner</button>
+                        <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Tasks</button>
+                        <button onClick={() => setActiveTab('afterwork')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='afterwork' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Clipboard size={16} /> After work planner</button>
                             </>
                         )}
                         <div className="ml-auto flex items-center gap-2">
                             {/* Google Calendar controls */}
                             {!(isHeather || isAccountManager) && (
-                                <div className="flex items-center gap-2">
-                                    {!googleAuthorized ? (
-                                        <button
-                                            onClick={async ()=>{ try { await ensureGoogleToken(); await listGoogleCalendars(); } catch(_){} }}
-                                            className="text-xs rounded px-2 py-1 bg-green-600 text-white hover:bg-green-700"
-                                        >Connect Google</button>
-                                    ) : (
-                                        <>
-                                            <select value={googleWorkCalendarId} onChange={(e)=> setGoogleWorkCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
-                                                <option value="">Work cal…</option>
-                                                {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
-                                            </select>
-                                            <select value={googleHomeCalendarId} onChange={(e)=> setGoogleHomeCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
-                                                <option value="">Home cal…</option>
-                                                {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
-                                            </select>
-                                            <button onClick={importFromGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Import'}</button>
-                                            <button onClick={exportToGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Export'}</button>
-                                        </>
-                                    )}
-                                </div>
+                            <div className="flex items-center gap-2">
+                                {!googleAuthorized ? (
+                                    <button
+                                        onClick={async ()=>{ try { await ensureGoogleToken(); await listGoogleCalendars(); } catch(_){} }}
+                                        className="text-xs rounded px-2 py-1 bg-green-600 text-white hover:bg-green-700"
+                                    >Connect Google</button>
+                                ) : (
+                                    <>
+                                        <select value={googleWorkCalendarId} onChange={(e)=> setGoogleWorkCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                            <option value="">Work cal…</option>
+                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                        </select>
+                                        <select value={googleHomeCalendarId} onChange={(e)=> setGoogleHomeCalendarId(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                            <option value="">Home cal…</option>
+                                            {googleCalendars.map((c)=> (<option key={c.id} value={c.id}>{c.summary}</option>))}
+                                        </select>
+                                        <button onClick={importFromGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Import'}</button>
+                                        <button onClick={exportToGoogle} disabled={googleSyncBusy} className={`text-xs rounded px-2 py-1 ${googleSyncBusy? 'bg-gray-200 text-gray-500':'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}>{googleSyncBusy? 'Syncing…':'Export'}</button>
+                                    </>
+                                )}
+                            </div>
                             )}
                             {!(isHeather || isAccountManager) && (
-                                <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
-                                    <option value="all">All</option>
-                                    <option value="Nick">Nick</option>
-                                    <option value="MP">MP</option>
-                                </select>
+                            <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                <option value="all">All</option>
+                                <option value="Nick">Nick</option>
+                                <option value="MP">MP</option>
+                            </select>
                             )}
                             <button onClick={()=> setTheme(theme==='light'?'dark':'light')} className="p-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">
                                 {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
@@ -1744,24 +1745,24 @@ export default function App() {
                                     <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={handleAddAccountManagerRequest}>Submit</button>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
-                                    <input value={bossReqTitle} onChange={(e)=>setBossReqTitle(e.target.value)} placeholder="Title" className="px-2 py-1 border border-amber-300 rounded text-sm" />
-                                    <select value={bossReqPriority} onChange={(e)=>setBossReqPriority(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm">
-                                        <option value="low">Low</option>
-                                        <option value="medium">Medium</option>
-                                        <option value="high">High</option>
-                                    </select>
-                                    <input type="date" value={bossReqDueDate} onChange={(e)=>setBossReqDueDate(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm" />
-                                    <input value={bossReqDetails} onChange={(e)=>setBossReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
-                                    <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={()=>{
-                                        if (!bossReqTitle.trim()) return;
+                            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                                <input value={bossReqTitle} onChange={(e)=>setBossReqTitle(e.target.value)} placeholder="Title" className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                <select value={bossReqPriority} onChange={(e)=>setBossReqPriority(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm">
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                </select>
+                                <input type="date" value={bossReqDueDate} onChange={(e)=>setBossReqDueDate(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                <input value={bossReqDetails} onChange={(e)=>setBossReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
+                                <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={()=>{
+                                    if (!bossReqTitle.trim()) return;
                                         const prevUser = currentUser;
                                         if (isHeather) setCurrentUser('Nick');
-                                        handleAddRequest(bossReqDueDate || formatDate(new Date()), bossReqTitle, bossReqPriority, bossReqDetails, 'boss');
+                                    handleAddRequest(bossReqDueDate || formatDate(new Date()), bossReqTitle, bossReqPriority, bossReqDetails, 'boss');
                                         if (isHeather) setCurrentUser(prevUser);
-                                        setBossReqTitle(''); setBossReqPriority('medium'); setBossReqDueDate(''); setBossReqDetails('');
-                                    }}>Add</button>
-                                </div>
+                                    setBossReqTitle(''); setBossReqPriority('medium'); setBossReqDueDate(''); setBossReqDetails('');
+                                }}>Add</button>
+                            </div>
                             )}
                             <div className="space-y-2">
                                 {(isHeather
