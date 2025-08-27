@@ -96,6 +96,39 @@ export default function App() {
     // Work tab new subtask input state per task
     const [newSubTitleByTask, setNewSubTitleByTask] = useState({});
 
+    // Request edit modal state
+    const [requestEditId, setRequestEditId] = useState(null);
+    const [requestEdit, setRequestEdit] = useState({ title: '', details: '', priority: 'medium', submittedBy: '', dueDate: '' });
+    const openRequestEditor = (req) => {
+        const due = req.status === 'approved' ? (req.approvedDueDate || req.requestedDueDate) : req.requestedDueDate;
+        setRequestEditId(req.id);
+        setRequestEdit({
+            title: req.title || '',
+            details: req.details || '',
+            priority: req.priority || 'medium',
+            submittedBy: req.submittedBy || '',
+            dueDate: due ? formatDate(due) : '',
+        });
+    };
+    const closeRequestEditor = () => { setRequestEditId(null); };
+    const saveRequestEditor = () => {
+        const r = (requests || []).find(x => x.id === requestEditId);
+        if (!r) { setRequestEditId(null); return; }
+        const updates = {
+            title: (requestEdit.title || '').trim(),
+            details: (requestEdit.details || '').trim(),
+            priority: requestEdit.priority || 'medium',
+            submittedBy: (requestEdit.submittedBy || '').trim() || undefined,
+        };
+        if (requestEdit.dueDate) {
+            const iso = new Date(requestEdit.dueDate).toISOString();
+            if (r.status === 'approved') updates.approvedDueDate = iso;
+            else updates.requestedDueDate = iso;
+        }
+        updateRequest(r.id, updates);
+        setRequestEditId(null);
+    };
+
     // Meals / Meal Planner
     const [meals, setMeals] = useState([]); // {id,title,recipe,link,ingredients:[{id,name,quantity}], fileUrl?, owner}
     const [groceriesSubtab, setGroceriesSubtab] = useState('list'); // list | planner
@@ -1717,11 +1750,7 @@ export default function App() {
                                                     <button className="text-xs bg-red-600 text-white rounded px-2 py-1" onClick={()=>denyRequest(r.id)}>Deny</button>
                                                 </>
                                             )}
-                                            {!isAccountManager && <button className="text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{
-                                                const newTitle = prompt('Edit title', r.title) || r.title;
-                                                const newDetails = prompt('Edit details', r.details || '') || r.details || '';
-                                                updateRequest(r.id, { title: newTitle, details: newDetails });
-                                            }}>Edit</button>}
+                                            <button className="text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>openRequestEditor(r)}>Edit</button>
                                             {!isAccountManager && <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={12}/></button>}
                                         </div>
                                     </div>
@@ -1738,11 +1767,7 @@ export default function App() {
                                             <div className="text-[11px] text-gray-600">Due {r.approvedDueDate ? new Date(r.approvedDueDate).toLocaleDateString() : (r.requestedDueDate ? new Date(r.requestedDueDate).toLocaleDateString() : '')}</div>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <button className="text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{
-                                                const newTitle = prompt('Edit title', r.title) || r.title;
-                                                const newDetails = prompt('Edit details', r.details || '') || r.details || '';
-                                                updateRequest(r.id, { title: newTitle, details: newDetails });
-                                            }}>Edit</button>
+                                            <button className="text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>openRequestEditor(r)}>Edit</button>
                                         </div>
                                     </div>
                                 ))}
@@ -1802,12 +1827,55 @@ export default function App() {
                                             </>
                                         )}
                                         {!isHeather && r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
+                                        <button className="text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>openRequestEditor(r)}>Edit</button>
                                         {!isHeather && <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>}
                                     </div>
                                 </div>
                             ))}
                         </div>
                     </> )}
+                </div>
+                )}
+
+                {/* Request Edit Modal */}
+                {requestEditId && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/40" onClick={closeRequestEditor}></div>
+                    <div className="relative bg-white dark:bg-gray-900 w-full max-w-md rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-4">
+                        <div className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-3">Edit Request</div>
+                        <div className="space-y-2 text-sm">
+                            <label className="block">
+                                <div className="text-gray-700 dark:text-gray-300 mb-1">Title</div>
+                                <input value={requestEdit.title} onChange={(e)=>setRequestEdit((p)=>({...p, title: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                            </label>
+                            <label className="block">
+                                <div className="text-gray-700 dark:text-gray-300 mb-1">Details / Notes</div>
+                                <textarea value={requestEdit.details} onChange={(e)=>setRequestEdit((p)=>({...p, details: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded min-h-[80px]"></textarea>
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <label className="block">
+                                    <div className="text-gray-700 dark:text-gray-300 mb-1">Priority</div>
+                                    <select value={requestEdit.priority} onChange={(e)=>setRequestEdit((p)=>({...p, priority: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded">
+                                        <option value="low">Low</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="high">High</option>
+                                    </select>
+                                </label>
+                                <label className="block">
+                                    <div className="text-gray-700 dark:text-gray-300 mb-1">Due date</div>
+                                    <input type="date" value={requestEdit.dueDate} onChange={(e)=>setRequestEdit((p)=>({...p, dueDate: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                                </label>
+                            </div>
+                            <label className="block">
+                                <div className="text-gray-700 dark:text-gray-300 mb-1">Submitted by</div>
+                                <input value={requestEdit.submittedBy} onChange={(e)=>setRequestEdit((p)=>({...p, submittedBy: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded" placeholder="Name (optional)" />
+                            </label>
+                        </div>
+                        <div className="mt-4 flex items-center gap-2 justify-end">
+                            <button className="px-3 py-1.5 rounded border border-gray-300 text-gray-700" onClick={closeRequestEditor}>Cancel</button>
+                            <button className="px-3 py-1.5 rounded bg-blue-600 text-white" onClick={saveRequestEditor}>Save</button>
+                        </div>
+                    </div>
                 </div>
                 )}
 
