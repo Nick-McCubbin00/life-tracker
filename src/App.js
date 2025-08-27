@@ -34,6 +34,8 @@ export default function App() {
     const [theme, setTheme] = useState('light');
     const [calendarTypeFilter, setCalendarTypeFilter] = useState('work'); // 'work' | 'home' | 'all'
     const [calendarVisibility, setCalendarVisibility] = useState({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } });
+    // Track when remote state has been loaded to prevent early autosave overwriting
+    const [stateLoaded, setStateLoaded] = useState(false);
 
     // Collections
     const [tasks, setTasks] = useState([]);      // {id, title, date(YYYY-MM-DD), done, recurrence}
@@ -335,6 +337,7 @@ export default function App() {
     // Immediate save helper to persist state changes without waiting for debounce
     const saveStateImmediate = async (overrides = {}) => {
         try {
+            if (!stateLoaded) return; // avoid saving before we loaded server state
             const nowIso = new Date().toISOString();
             const body = {
                 events,
@@ -499,6 +502,7 @@ export default function App() {
                 if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
                 if (Array.isArray(d.trips)) setTrips(d.trips);
                 if (Array.isArray(d.afterWorkPlans)) setAfterWorkPlans(d.afterWorkPlans);
+                setStateLoaded(true);
             } catch (e) {
                 setRemoteError(e?.message || 'Failed to load state');
             }
@@ -507,6 +511,7 @@ export default function App() {
 
     // Persist to Blob (debounced)
     useEffect(() => {
+        if (!stateLoaded) return; // don't autosave until initial state is loaded
         const save = setTimeout(async () => {
             const nowIso = new Date().toISOString();
             if (usingBlob) {
@@ -532,7 +537,7 @@ export default function App() {
             }
         }, 400);
         return () => clearTimeout(save);
-    }, [events, tasks, groceries, requests, meals, workFiles, trips, afterWorkPlans, usingBlob]);
+    }, [events, tasks, groceries, requests, meals, workFiles, trips, afterWorkPlans, usingBlob, stateLoaded]);
 
     // Removed localStorage caching of collections to ensure cross-instance consistency
 
@@ -561,7 +566,7 @@ export default function App() {
         setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, ...updates } : r));
     };
     const denyRequest = (requestId) => {
-        const next = (requests || []).map((r) => r.id === requestId ? { ...r, status: 'denied', approved: false } : r);
+        const next = (requests || []).map((r) => r.id === requestId ? { ...r, status: 'denied', approved: false, reviewStage: 'done' } : r);
         setRequests(next);
         saveStateImmediate({ requests: next });
     };
@@ -702,6 +707,7 @@ export default function App() {
             source: 'account_manager',
             submittedBy: n || 'Account Manager',
             owner: 'Nick',
+            reviewStage: 'heather',
         };
         setRequests((prev) => [...prev, payload]);
         // Persist immediately so Heather sees it and refresh keeps it
@@ -709,7 +715,16 @@ export default function App() {
         setAmTitle(''); setAmDetails(''); setAmDueDate(''); setAmPriority('medium'); setAmName('');
     };
     const approveRequest = (requestId, newDueDateStr) => {
-        const next = (requests || []).map((r) => r.id === requestId ? { ...r, approved: true, status: 'approved', approvedDueDate: newDueDateStr ? new Date(newDueDateStr).toISOString() : (r.requestedDueDate || null) } : r);
+        const next = (requests || []).map((r) => {
+            if (r.id !== requestId) return r;
+            const dateIso = newDueDateStr ? new Date(newDueDateStr).toISOString() : (r.requestedDueDate || null);
+            // Two-stage flow: Heather -> Nick -> final
+            if (currentUser === 'Heather') {
+                return { ...r, reviewStage: 'nick', requestedDueDate: dateIso, approved: false, status: 'pending' };
+            }
+            // Nick (or others) final approval
+            return { ...r, approved: true, status: 'approved', approvedDueDate: dateIso, reviewStage: 'done' };
+        });
         setRequests(next);
         saveStateImmediate({ requests: next });
     };
@@ -1766,10 +1781,12 @@ export default function App() {
                             )}
                             <div className="space-y-2">
                                 {(isHeather
-                                    ? requests.filter(r=> (r.source==='boss' || r.source==='account_manager') && (r.owner==='Nick' || !r.owner) && r.status==='pending')
+                                    // Heather sees those waiting for her
+                                    ? requests.filter(r=> (r.source==='boss' || r.source==='account_manager') && (r.owner==='Nick' || !r.owner) && (r.reviewStage==='heather' || (!r.reviewStage && r.status==='pending')))
                                     : isAccountManager
                                         ? requests.filter(r=> r.source==='account_manager' && (r.owner==='Nick' || !r.owner))
-                                        : requests.filter(r=> ((r.source==='boss') || (r.source==='account_manager' && r.status==='approved')) && appliesOwnerFilter(r.owner))
+                                        // Nick sees boss items and AM items that moved to him
+                                        : requests.filter(r=> ((r.source==='boss') || (r.source==='account_manager' && (r.reviewStage==='nick' || r.status==='approved'))) && appliesOwnerFilter(r.owner))
                                 ).map((r)=>(
                                     <div key={`boss-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-amber-200">
                                         <div>
@@ -1777,7 +1794,20 @@ export default function App() {
                                             <div className="text-[11px] text-gray-600 capitalize">{r.priority}{r.submittedBy ? ` · from ${r.submittedBy}` : ''}</div>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            {isHeather && r.status==='pending' && (
+                                            {isHeather && (r.reviewStage==='heather' || (!r.reviewStage && r.status==='pending')) && (
+                                                <>
+                                                    <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>updateRequest(r.id, { requestedDueDate: new Date(e.target.value).toISOString() })} className="px-2 py-1 border border-gray-300 rounded text-xs" />
+                                                    <select defaultValue={r.priority} onChange={(e)=>updateRequest(r.id, { priority: e.target.value })} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                                        <option value="low">Low</option>
+                                                        <option value="medium">Medium</option>
+                                                        <option value="high">High</option>
+                                                    </select>
+                                                    <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>
+                                                    <button className="text-xs bg-red-600 text-white rounded px-2 py-1" onClick={()=>denyRequest(r.id)}>Deny</button>
+                                                </>
+                                            )}
+                                            {/* Nick approval actions */}
+                                            {!isHeather && !isAccountManager && (r.reviewStage==='nick' || r.status==='approved') && r.status!=='approved' && (
                                                 <>
                                                     <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>updateRequest(r.id, { requestedDueDate: new Date(e.target.value).toISOString() })} className="px-2 py-1 border border-gray-300 rounded text-xs" />
                                                     <select defaultValue={r.priority} onChange={(e)=>updateRequest(r.id, { priority: e.target.value })} className="px-2 py-1 border border-gray-300 rounded text-xs">
@@ -1798,8 +1828,8 @@ export default function App() {
                         </div>
                         {isHeather && (
                             <div className="space-y-2">
-                                <div className="text-sm font-semibold text-gray-700 mt-4">Nick's Requests Approved</div>
-                                {requests.filter(r=> (r.owner==='Nick' || !r.owner) && r.status==='approved').map((r)=>(
+                                <div className="text-sm font-semibold text-gray-700 mt-4">Requests Approved by Nick</div>
+                                {requests.filter(r=> (r.owner==='Nick' || !r.owner) && r.reviewStage==='done' && r.status==='approved').map((r)=>(
                                     <div key={`approved-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-green-200">
                                         <div>
                                             <div className="font-semibold text-gray-800">{r.title}</div>
