@@ -1769,7 +1769,7 @@ export default function App() {
                                     ? requests.filter(r=> (r.source==='boss' || r.source==='account_manager') && (r.owner==='Nick' || !r.owner) && r.status==='pending')
                                     : isAccountManager
                                         ? requests.filter(r=> r.source==='account_manager' && (r.owner==='Nick' || !r.owner))
-                                        : requests.filter(r=> r.source==='boss' && appliesOwnerFilter(r.owner))
+                                        : requests.filter(r=> ((r.source==='boss') || (r.source==='account_manager' && r.status==='approved')) && appliesOwnerFilter(r.owner))
                                 ).map((r)=>(
                                     <div key={`boss-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-amber-200">
                                         <div>
