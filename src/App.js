@@ -1694,9 +1694,9 @@ export default function App() {
                             )}
                             <div className="space-y-2">
                                 {(isHeather
-                                    ? requests.filter(r=> (r.source==='boss' || r.source==='account_manager') && r.owner==='Nick' && r.status!=='denied')
+                                    ? requests.filter(r=> (r.source==='boss' || r.source==='account_manager') && (r.owner==='Nick' || !r.owner) && r.status==='pending')
                                     : isAccountManager
-                                        ? requests.filter(r=> r.source==='account_manager' && r.owner==='Nick')
+                                        ? requests.filter(r=> r.source==='account_manager' && (r.owner==='Nick' || !r.owner))
                                         : requests.filter(r=> r.source==='boss' && appliesOwnerFilter(r.owner))
                                 ).map((r)=>(
                                     <div key={`boss-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-amber-200">
@@ -1731,7 +1731,7 @@ export default function App() {
                         {isHeather && (
                             <div className="space-y-2">
                                 <div className="text-sm font-semibold text-gray-700 mt-4">Nick's Requests Approved</div>
-                                {requests.filter(r=> r.owner==='Nick' && r.status==='approved').map((r)=>(
+                                {requests.filter(r=> (r.owner==='Nick' || !r.owner) && r.status==='approved').map((r)=>(
                                     <div key={`approved-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-green-200">
                                         <div>
                                             <div className="font-semibold text-gray-800">{r.title}</div>
