@@ -126,6 +126,9 @@ export default function App() {
             else updates.requestedDueDate = iso;
         }
         updateRequest(r.id, updates);
+        // ensure persistence immediately
+        const next = (requests || []).map((x)=> x.id===r.id ? { ...x, ...updates } : x);
+        saveStateImmediate({ requests: next });
         setRequestEditId(null);
     };
 
@@ -326,6 +329,33 @@ export default function App() {
             setRemoteError(e?.message || 'Failed to list Google calendars');
         } finally {
             setGoogleSyncBusy(false);
+        }
+    };
+
+    // Immediate save helper to persist state changes without waiting for debounce
+    const saveStateImmediate = async (overrides = {}) => {
+        try {
+            if (!usingBlob) return;
+            const nowIso = new Date().toISOString();
+            const body = {
+                events,
+                tasks,
+                groceries,
+                requests,
+                meals,
+                workFiles,
+                trips,
+                afterWorkPlans,
+                savedAt: nowIso,
+                ...overrides,
+            };
+            await fetch('/api/state', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+        } catch (_) {
+            // swallow; debounced saver will retry
         }
     };
 
@@ -673,6 +703,8 @@ export default function App() {
             owner: 'Nick',
         };
         setRequests((prev) => [...prev, payload]);
+        // Persist immediately so Heather sees it and refresh keeps it
+        saveStateImmediate({ requests: [...requests, payload] });
         setAmTitle(''); setAmDetails(''); setAmDueDate(''); setAmPriority('medium'); setAmName('');
     };
     const approveRequest = (requestId, newDueDateStr) => {
