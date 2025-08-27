@@ -27,6 +27,8 @@ export default function App() {
     // Auth / User & global filters
     const [currentUser, setCurrentUser] = useState(null);
     const isHeather = currentUser === 'Heather';
+    const isAccountManager = currentUser === 'AccountManager';
+    const isRestrictedViewer = isHeather || isAccountManager;
     const [ownerFilter, setOwnerFilter] = useState('all'); // 'all' | 'Nick' | 'MP'
     const [mode, setMode] = useState('work'); // 'work' | 'home'
     const [theme, setTheme] = useState('light');
@@ -60,6 +62,12 @@ export default function App() {
     const [reqFormPriority, setReqFormPriority] = useState('medium');
     const [reqFormDueDate, setReqFormDueDate] = useState('');
     const [reqFormDetails, setReqFormDetails] = useState('');
+    // Account Manager request form
+    const [amName, setAmName] = useState('');
+    const [amTitle, setAmTitle] = useState('');
+    const [amPriority, setAmPriority] = useState('medium');
+    const [amDueDate, setAmDueDate] = useState('');
+    const [amDetails, setAmDetails] = useState('');
 
     // Boss requests (work)
     const [bossReqTitle, setBossReqTitle] = useState('');
@@ -188,7 +196,7 @@ export default function App() {
 
     useEffect(() => {}, [currentUser]);
 
-    // Restrict Heather's view to Nick's work calendar and Requests tab
+    // Restrict Heather and Account Manager views
     useEffect(() => {
         if (currentUser === 'Heather') {
             if (mode !== 'work') setMode('work');
@@ -197,7 +205,14 @@ export default function App() {
             if (calendarTypeFilter !== 'work') setCalendarTypeFilter('work');
             setCalendarVisibility({ Nick: { work: true, personal: false }, MP: { work: false, personal: false } });
         }
-    }, [currentUser, mode, ownerFilter, calendarTypeFilter]);
+        if (currentUser === 'AccountManager') {
+            if (mode !== 'work') setMode('work');
+            if (activeTab !== 'requests') setActiveTab('requests');
+            if (ownerFilter !== 'Nick') setOwnerFilter('Nick');
+            if (calendarTypeFilter !== 'work') setCalendarTypeFilter('work');
+            setCalendarVisibility({ Nick: { work: true, personal: false }, MP: { work: false, personal: false } });
+        }
+    }, [currentUser, mode, ownerFilter, calendarTypeFilter, activeTab]);
 
     useEffect(() => {}, []);
 
@@ -480,6 +495,12 @@ export default function App() {
     // Utilities
     const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const appliesOwnerFilter = (owner) => ownerFilter === 'all' || owner === ownerFilter;
+    const updateRequest = (requestId, updates) => {
+        setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, ...updates } : r));
+    };
+    const denyRequest = (requestId) => {
+        setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: 'denied', approved: false } : r));
+    };
     const parseYmd = (ymd) => {
         if (!ymd) return new Date();
         const parts = String(ymd).split('-').map((p) => parseInt(p, 10));
@@ -599,6 +620,27 @@ export default function App() {
         setNewRequestTitle('');
         setRequestDetails('');
         setNewRequestPriority('medium');
+    };
+    const handleAddAccountManagerRequest = () => {
+        const t = (amTitle || '').trim();
+        const n = (amName || '').trim();
+        if (!t || !amDueDate) return;
+        const id = generateId();
+        const payload = {
+            id,
+            title: t,
+            details: (amDetails || '').trim(),
+            priority: amPriority,
+            requestedDueDate: new Date(amDueDate).toISOString(),
+            approved: false,
+            approvedDueDate: null,
+            status: 'pending',
+            source: 'account_manager',
+            submittedBy: n || 'Account Manager',
+            owner: 'Nick',
+        };
+        setRequests((prev) => [...prev, payload]);
+        setAmTitle(''); setAmDetails(''); setAmDueDate(''); setAmPriority('medium'); setAmName('');
     };
     const approveRequest = (requestId, newDueDateStr) => {
         setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, approved: true, status: 'approved', approvedDueDate: newDueDateStr ? new Date(newDueDateStr).toISOString() : (r.requestedDueDate || null) } : r));
@@ -752,6 +794,7 @@ export default function App() {
                             <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=> setCurrentUser('Nick')}>Nick</button>
                             <button className="px-4 py-2 rounded-lg bg-gray-800 text-white" onClick={()=> setCurrentUser('MP')}>MP</button>
                             <button className="px-4 py-2 rounded-lg bg-amber-600 text-white" onClick={()=> setCurrentUser('Heather')}>Heather</button>
+                            <button className="px-4 py-2 rounded-lg bg-purple-700 text-white" onClick={()=> setCurrentUser('AccountManager')}>Account Manager</button>
                         </div>
                         <div className="mt-4 flex items-center justify-center gap-2 text-xs">
                             <span className="text-gray-600 dark:text-gray-300">Theme</span>
@@ -777,9 +820,11 @@ export default function App() {
                 {mode==='work' ? (
                 <div className="bg-white dark:bg-gray-900 p-2 rounded-2xl shadow border border-gray-200 dark:border-gray-700">
                     <div className="flex flex-wrap gap-2 items-center">
-                        <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
+                        {!isAccountManager && (
+                            <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
+                        )}
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
-                        {!isHeather && (
+                        {!(isHeather || isAccountManager) && (
                             <>
                                 <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Tasks</button>
                                 <button onClick={() => setActiveTab('afterwork')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='afterwork' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Clipboard size={16} /> After work planner</button>
@@ -787,7 +832,7 @@ export default function App() {
                         )}
                         <div className="ml-auto flex items-center gap-2">
                             {/* Google Calendar controls */}
-                            {!isHeather && (
+                            {!(isHeather || isAccountManager) && (
                                 <div className="flex items-center gap-2">
                                     {!googleAuthorized ? (
                                         <button
@@ -810,7 +855,7 @@ export default function App() {
                                     )}
                                 </div>
                             )}
-                            {!isHeather && (
+                            {!(isHeather || isAccountManager) && (
                                 <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
                                     <option value="all">All</option>
                                     <option value="Nick">Nick</option>
@@ -1611,44 +1656,98 @@ export default function App() {
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
                     {mode==='work' ? (
                     <>
-                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Boss Requests</div>
-                        <div className="text-xs text-gray-500">Add, approve, or complete requests from your boss. Approved requests appear on the calendar on their approved date.</div>
+                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">{isAccountManager ? 'Requests for Nick to Do' : 'Boss Requests'}</div>
+                        <div className="text-xs text-gray-500">{isAccountManager ? 'Submit a request for Nick. Heather will review and approve/deny.' : 'Add, approve, or complete requests from your boss. Approved requests appear on the calendar on their approved date.'}</div>
                         <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
-                            <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
-                                <input value={bossReqTitle} onChange={(e)=>setBossReqTitle(e.target.value)} placeholder="Title" className="px-2 py-1 border border-amber-300 rounded text-sm" />
-                                <select value={bossReqPriority} onChange={(e)=>setBossReqPriority(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm">
-                                    <option value="low">Low</option>
-                                    <option value="medium">Medium</option>
-                                    <option value="high">High</option>
-                                </select>
-                                <input type="date" value={bossReqDueDate} onChange={(e)=>setBossReqDueDate(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm" />
-                                <input value={bossReqDetails} onChange={(e)=>setBossReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
-                                <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={()=>{
-                                    if (!bossReqTitle.trim()) return;
-                                    // Ensure owner is Nick regardless of current user (Heather creates for Nick)
-                                    const prevUser = currentUser;
-                                    if (isHeather) setCurrentUser('Nick');
-                                    handleAddRequest(bossReqDueDate || formatDate(new Date()), bossReqTitle, bossReqPriority, bossReqDetails, 'boss');
-                                    if (isHeather) setCurrentUser(prevUser);
-                                    setBossReqTitle(''); setBossReqPriority('medium'); setBossReqDueDate(''); setBossReqDetails('');
-                                }}>Add</button>
-                            </div>
+                            {isAccountManager ? (
+                                <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                                    <input value={amName} onChange={(e)=>setAmName(e.target.value)} placeholder="Your name" className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                    <input value={amTitle} onChange={(e)=>setAmTitle(e.target.value)} placeholder="Task title" className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                    <select value={amPriority} onChange={(e)=>setAmPriority(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm">
+                                        <option value="low">Low</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="high">High</option>
+                                    </select>
+                                    <input type="date" value={amDueDate} onChange={(e)=>setAmDueDate(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                    <input value={amDetails} onChange={(e)=>setAmDetails(e.target.value)} placeholder="Details/notes (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
+                                    <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={handleAddAccountManagerRequest}>Submit</button>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                                    <input value={bossReqTitle} onChange={(e)=>setBossReqTitle(e.target.value)} placeholder="Title" className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                    <select value={bossReqPriority} onChange={(e)=>setBossReqPriority(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm">
+                                        <option value="low">Low</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="high">High</option>
+                                    </select>
+                                    <input type="date" value={bossReqDueDate} onChange={(e)=>setBossReqDueDate(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                    <input value={bossReqDetails} onChange={(e)=>setBossReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
+                                    <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={()=>{
+                                        if (!bossReqTitle.trim()) return;
+                                        const prevUser = currentUser;
+                                        if (isHeather) setCurrentUser('Nick');
+                                        handleAddRequest(bossReqDueDate || formatDate(new Date()), bossReqTitle, bossReqPriority, bossReqDetails, 'boss');
+                                        if (isHeather) setCurrentUser(prevUser);
+                                        setBossReqTitle(''); setBossReqPriority('medium'); setBossReqDueDate(''); setBossReqDetails('');
+                                    }}>Add</button>
+                                </div>
+                            )}
                             <div className="space-y-2">
-                                {requests.filter(r=> r.source==='boss' && (isHeather ? r.owner==='Nick' : appliesOwnerFilter(r.owner))).map((r)=>(
+                                {(isHeather
+                                    ? requests.filter(r=> (r.source==='boss' || r.source==='account_manager') && r.owner==='Nick' && r.status!=='denied')
+                                    : isAccountManager
+                                        ? requests.filter(r=> r.source==='account_manager' && r.owner==='Nick')
+                                        : requests.filter(r=> r.source==='boss' && appliesOwnerFilter(r.owner))
+                                ).map((r)=>(
                                     <div key={`boss-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-amber-200">
                                         <div>
                                             <div className="font-semibold text-gray-800">{r.title}</div>
-                                            <div className="text-[11px] text-gray-600 capitalize">{r.priority}</div>
+                                            <div className="text-[11px] text-gray-600 capitalize">{r.priority}{r.submittedBy ? ` · from ${r.submittedBy}` : ''}</div>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            {!isHeather && r.status==='pending' && <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>}
-                                            {!isHeather && r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>completeRequest(r.id)}>Done</button>}
-                                            {!isHeather && <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={12}/></button>}
+                                            {isHeather && r.status==='pending' && (
+                                                <>
+                                                    <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>updateRequest(r.id, { requestedDueDate: new Date(e.target.value).toISOString() })} className="px-2 py-1 border border-gray-300 rounded text-xs" />
+                                                    <select defaultValue={r.priority} onChange={(e)=>updateRequest(r.id, { priority: e.target.value })} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                                        <option value="low">Low</option>
+                                                        <option value="medium">Medium</option>
+                                                        <option value="high">High</option>
+                                                    </select>
+                                                    <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>
+                                                    <button className="text-xs bg-red-600 text-white rounded px-2 py-1" onClick={()=>denyRequest(r.id)}>Deny</button>
+                                                </>
+                                            )}
+                                            {!isAccountManager && <button className="text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{
+                                                const newTitle = prompt('Edit title', r.title) || r.title;
+                                                const newDetails = prompt('Edit details', r.details || '') || r.details || '';
+                                                updateRequest(r.id, { title: newTitle, details: newDetails });
+                                            }}>Edit</button>}
+                                            {!isAccountManager && <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={12}/></button>}
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
+                        {isHeather && (
+                            <div className="space-y-2">
+                                <div className="text-sm font-semibold text-gray-700 mt-4">Nick's Requests Approved</div>
+                                {requests.filter(r=> r.owner==='Nick' && r.status==='approved').map((r)=>(
+                                    <div key={`approved-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-green-200">
+                                        <div>
+                                            <div className="font-semibold text-gray-800">{r.title}</div>
+                                            <div className="text-[11px] text-gray-600">Due {r.approvedDueDate ? new Date(r.approvedDueDate).toLocaleDateString() : (r.requestedDueDate ? new Date(r.requestedDueDate).toLocaleDateString() : '')}</div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button className="text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>{
+                                                const newTitle = prompt('Edit title', r.title) || r.title;
+                                                const newDetails = prompt('Edit details', r.details || '') || r.details || '';
+                                                updateRequest(r.id, { title: newTitle, details: newDetails });
+                                            }}>Edit</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </>
                     ) : (
                     <>
