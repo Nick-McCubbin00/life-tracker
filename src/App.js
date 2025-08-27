@@ -254,6 +254,18 @@ export default function App() {
 
     useEffect(() => {}, []);
 
+    // Save pending requests quickly on unload/refresh
+    useEffect(() => {
+        const handler = () => {
+            try {
+                const body = JSON.stringify({ requests });
+                navigator.sendBeacon && navigator.sendBeacon('/api/state', new Blob([body], { type: 'application/json' }));
+            } catch (_) {}
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [requests]);
+
     const addDaysToYmd = (ymd, days) => {
         if (!ymd) return ymd;
         const [y, m, d] = ymd.split('-').map((x) => Number(x));
@@ -355,6 +367,7 @@ export default function App() {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
+                keepalive: true,
             });
         } catch (_) {
             // swallow; debounced saver will retry
@@ -547,7 +560,7 @@ export default function App() {
                     setRemoteError('Failed to save state');
                 }
             }
-        }, 400);
+        }, 150);
         return () => clearTimeout(save);
     }, [events, tasks, groceries, requests, meals, workFiles, trips, afterWorkPlans, usingBlob, stateLoaded]);
 
