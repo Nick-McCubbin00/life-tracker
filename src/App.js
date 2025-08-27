@@ -708,13 +708,19 @@ export default function App() {
         setAmTitle(''); setAmDetails(''); setAmDueDate(''); setAmPriority('medium'); setAmName('');
     };
     const approveRequest = (requestId, newDueDateStr) => {
-        setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, approved: true, status: 'approved', approvedDueDate: newDueDateStr ? new Date(newDueDateStr).toISOString() : (r.requestedDueDate || null) } : r));
+        const next = (requests || []).map((r) => r.id === requestId ? { ...r, approved: true, status: 'approved', approvedDueDate: newDueDateStr ? new Date(newDueDateStr).toISOString() : (r.requestedDueDate || null) } : r);
+        setRequests(next);
+        saveStateImmediate({ requests: next });
     };
     const completeRequest = (requestId) => {
-        setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: 'completed' } : r));
+        const next = (requests || []).map((r) => r.id === requestId ? { ...r, status: 'completed' } : r);
+        setRequests(next);
+        saveStateImmediate({ requests: next });
     };
     const deleteRequest = (requestId) => {
-        setRequests((prev) => prev.filter((r) => r.id !== requestId));
+        const next = (requests || []).filter((r) => r.id !== requestId);
+        setRequests(next);
+        saveStateImmediate({ requests: next });
     };
 
     // Calendar rendering logic
