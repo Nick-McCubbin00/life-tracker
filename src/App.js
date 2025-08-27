@@ -502,21 +502,15 @@ export default function App() {
                 if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
                 if (Array.isArray(d.trips)) setTrips(d.trips);
                 if (Array.isArray(d.afterWorkPlans)) setAfterWorkPlans(d.afterWorkPlans);
-                const hasAny = (Array.isArray(d.events) && d.events.length) || (Array.isArray(d.tasks) && d.tasks.length) || (Array.isArray(d.requests) && d.requests.length) || (Array.isArray(d.groceries) && d.groceries.length) || (Array.isArray(d.meals) && d.meals.length) || (Array.isArray(d.workFiles) && d.workFiles.length) || (Array.isArray(d.trips) && d.trips.length) || (Array.isArray(d.afterWorkPlans) && d.afterWorkPlans.length);
-                if (!hasAny) {
+                const needCalFallback = (!Array.isArray(d.events) || d.events.length===0) && (!Array.isArray(d.tasks) || d.tasks.length===0);
+                if (needCalFallback) {
                     try {
                         const resp2 = await fetch('/api/load-backup');
                         const json2 = await resp2.json();
                         if (resp2.ok) {
                             const b = json2?.data || {};
-                            if (Array.isArray(b.events)) setEvents(b.events);
-                            if (Array.isArray(b.tasks)) setTasks(b.tasks);
-                            if (Array.isArray(b.groceries)) setGroceries(b.groceries);
-                            if (Array.isArray(b.requests)) setRequests(b.requests);
-                            if (Array.isArray(b.meals)) setMeals(b.meals);
-                            if (Array.isArray(b.workFiles)) setWorkFiles(b.workFiles);
-                            if (Array.isArray(b.trips)) setTrips(b.trips);
-                            if (Array.isArray(b.afterWorkPlans)) setAfterWorkPlans(b.afterWorkPlans);
+                            if ((!Array.isArray(d.events) || d.events.length===0) && Array.isArray(b.events)) setEvents(b.events);
+                            if ((!Array.isArray(d.tasks) || d.tasks.length===0) && Array.isArray(b.tasks)) setTasks(b.tasks);
                         }
                     } catch (_) {}
                 }
