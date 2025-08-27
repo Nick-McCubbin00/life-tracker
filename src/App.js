@@ -32,7 +32,7 @@ export default function App() {
     const [ownerFilter, setOwnerFilter] = useState('all'); // 'all' | 'Nick' | 'MP'
     const [mode, setMode] = useState('work'); // 'work' | 'home'
     const [theme, setTheme] = useState('light');
-    const [calendarTypeFilter, setCalendarTypeFilter] = useState('work'); // 'work' | 'home' | 'all'
+    const [calendarTypeFilter, setCalendarTypeFilter] = useState('all'); // 'work' | 'home' | 'all'
     const [calendarVisibility, setCalendarVisibility] = useState({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } });
     // Track when remote state has been loaded to prevent early autosave overwriting
     const [stateLoaded, setStateLoaded] = useState(false);
@@ -502,6 +502,24 @@ export default function App() {
                 if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
                 if (Array.isArray(d.trips)) setTrips(d.trips);
                 if (Array.isArray(d.afterWorkPlans)) setAfterWorkPlans(d.afterWorkPlans);
+                const hasAny = (Array.isArray(d.events) && d.events.length) || (Array.isArray(d.tasks) && d.tasks.length) || (Array.isArray(d.requests) && d.requests.length) || (Array.isArray(d.groceries) && d.groceries.length) || (Array.isArray(d.meals) && d.meals.length) || (Array.isArray(d.workFiles) && d.workFiles.length) || (Array.isArray(d.trips) && d.trips.length) || (Array.isArray(d.afterWorkPlans) && d.afterWorkPlans.length);
+                if (!hasAny) {
+                    try {
+                        const resp2 = await fetch('/api/load-backup');
+                        const json2 = await resp2.json();
+                        if (resp2.ok) {
+                            const b = json2?.data || {};
+                            if (Array.isArray(b.events)) setEvents(b.events);
+                            if (Array.isArray(b.tasks)) setTasks(b.tasks);
+                            if (Array.isArray(b.groceries)) setGroceries(b.groceries);
+                            if (Array.isArray(b.requests)) setRequests(b.requests);
+                            if (Array.isArray(b.meals)) setMeals(b.meals);
+                            if (Array.isArray(b.workFiles)) setWorkFiles(b.workFiles);
+                            if (Array.isArray(b.trips)) setTrips(b.trips);
+                            if (Array.isArray(b.afterWorkPlans)) setAfterWorkPlans(b.afterWorkPlans);
+                        }
+                    } catch (_) {}
+                }
                 setStateLoaded(true);
             } catch (e) {
                 setRemoteError(e?.message || 'Failed to load state');
