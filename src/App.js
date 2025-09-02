@@ -1020,7 +1020,7 @@ export default function App() {
                             ) : (
                                 <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
                             )}
-                            {!isHeather && (
+                            {(!isAccountManager) && (
                             <button
                                 disabled={isBackingUp}
                                 onClick={async ()=>{
