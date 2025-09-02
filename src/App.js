@@ -34,6 +34,19 @@ export default function App() {
     const [theme, setTheme] = useState('light');
     const [calendarTypeFilter, setCalendarTypeFilter] = useState('all'); // 'work' | 'home' | 'all'
     const [calendarVisibility, setCalendarVisibility] = useState({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } });
+    
+    // Simple passcode gate for Nick and Heather
+    const [loginPasscodeFor, setLoginPasscodeFor] = useState(null); // 'Nick' | 'Heather' | null
+    const [loginPasscodeValue, setLoginPasscodeValue] = useState('');
+    const [loginPasscodeError, setLoginPasscodeError] = useState('');
+    const openPasscode = (user) => { setLoginPasscodeFor(user); setLoginPasscodeValue(''); setLoginPasscodeError(''); };
+    const cancelPasscode = () => { setLoginPasscodeFor(null); setLoginPasscodeValue(''); setLoginPasscodeError(''); };
+    const confirmPasscode = () => {
+        const code = (loginPasscodeValue || '').trim();
+        if (loginPasscodeFor === 'Nick' && code === '0604') { setCurrentUser('Nick'); cancelPasscode(); return; }
+        if (loginPasscodeFor === 'Heather' && code === '6263') { setCurrentUser('Heather'); cancelPasscode(); return; }
+        setLoginPasscodeError('Incorrect code');
+    };
     // Track when remote state has been loaded to prevent early autosave overwriting
     const [stateLoaded, setStateLoaded] = useState(false);
 
@@ -903,9 +916,9 @@ export default function App() {
                         <div className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Select User</div>
                         <div className="text-sm text-gray-600 dark:text-gray-300 mb-4">Choose who is using the app</div>
                         <div className="flex items-center justify-center gap-3">
-                            <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=> setCurrentUser('Nick')}>Nick</button>
+                            <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=> openPasscode('Nick')}>Nick</button>
                             <button className="px-4 py-2 rounded-lg bg-gray-800 text-white" onClick={()=> setCurrentUser('MP')}>MP</button>
-                            <button className="px-4 py-2 rounded-lg bg-amber-600 text-white" onClick={()=> setCurrentUser('Heather')}>Heather</button>
+                            <button className="px-4 py-2 rounded-lg bg-amber-600 text-white" onClick={()=> openPasscode('Heather')}>Heather</button>
                             <button className="px-4 py-2 rounded-lg bg-purple-700 text-white" onClick={()=> setCurrentUser('AccountManager')}>Account Manager</button>
                         </div>
                         <div className="mt-4 flex items-center justify-center gap-2 text-xs">
@@ -914,6 +927,31 @@ export default function App() {
                                 {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
                             </button>
                         </div>
+                        {loginPasscodeFor && (
+                            <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+                                <div className="w-full max-w-sm bg-white dark:bg-gray-900 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-4 text-left">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">Enter passcode for {loginPasscodeFor}</div>
+                                        <button className="p-1 text-gray-500 hover:text-gray-700" onClick={cancelPasscode}><X size={16} /></button>
+                                    </div>
+                                    <input
+                                        type="password"
+                                        inputMode="numeric"
+                                        autoFocus
+                                        value={loginPasscodeValue}
+                                        onChange={(e)=>{ setLoginPasscodeValue(e.target.value); if (loginPasscodeError) setLoginPasscodeError(''); }}
+                                        className="w-full border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+                                        placeholder="Enter 4-digit code"
+                                        onKeyDown={(e)=>{ if (e.key === 'Enter') { e.preventDefault(); confirmPasscode(); } }}
+                                    />
+                                    {loginPasscodeError && <div className="mt-2 text-xs text-red-600 flex items-center gap-1"><AlertTriangle size={14} /> {loginPasscodeError}</div>}
+                                    <div className="mt-3 flex items-center justify-end gap-2">
+                                        <button className="px-3 py-1.5 text-xs rounded bg-gray-100 text-gray-800 hover:bg-gray-200" onClick={cancelPasscode}>Cancel</button>
+                                        <button className="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700" onClick={confirmPasscode}>Confirm</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
                 {currentUser && (
