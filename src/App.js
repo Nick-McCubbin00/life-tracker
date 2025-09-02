@@ -67,6 +67,11 @@ export default function App() {
     const [newRequestTitle, setNewRequestTitle] = useState('');
     const [newRequestPriority, setNewRequestPriority] = useState('medium');
     const [requestDetails, setRequestDetails] = useState('');
+    // Heather -> Nick direct request form state (work requests)
+    const [heatherReqTitle, setHeatherReqTitle] = useState('');
+    const [heatherReqPriority, setHeatherReqPriority] = useState('medium');
+    const [heatherReqDueDate, setHeatherReqDueDate] = useState('');
+    const [heatherReqDetails, setHeatherReqDetails] = useState('');
 
     // Groceries inputs
     const [groceryName, setGroceryName] = useState('');
@@ -751,6 +756,29 @@ export default function App() {
         // Persist immediately so Heather sees it and refresh keeps it
         saveStateImmediate({ requests: [...requests, payload] });
         setAmTitle(''); setAmDetails(''); setAmDueDate(''); setAmPriority('medium'); setAmName('');
+    };
+    const handleAddHeatherDirectRequest = () => {
+        const t = (heatherReqTitle || '').trim();
+        if (!t || !heatherReqDueDate) return;
+        const id = generateId();
+        const payload = {
+            id,
+            title: t,
+            details: (heatherReqDetails || '').trim(),
+            priority: heatherReqPriority,
+            requestedDueDate: new Date(heatherReqDueDate).toISOString(),
+            approved: false,
+            approvedDueDate: null,
+            status: 'pending',
+            source: 'heather',
+            submittedBy: 'Heather',
+            owner: 'Nick',
+            reviewStage: 'nick',
+        };
+        setRequests((prev) => [...prev, payload]);
+        // Persist quickly so Nick sees it
+        saveStateImmediate({ requests: [...requests, payload] });
+        setHeatherReqTitle(''); setHeatherReqDetails(''); setHeatherReqDueDate(''); setHeatherReqPriority('medium');
     };
     const approveRequest = (requestId, newDueDateStr) => {
         const next = (requests || []).map((r) => {
@@ -1806,8 +1834,8 @@ export default function App() {
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
                     {mode==='work' ? (
                     <>
-                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">{isAccountManager ? 'Requests for Nick to Do' : 'Boss Requests'}</div>
-                        <div className="text-xs text-gray-500">{isAccountManager ? 'Submit a request for Nick. Heather will review and approve/deny.' : 'Add, approve, or complete requests from your boss. Approved requests appear on the calendar on their approved date.'}</div>
+                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">{isAccountManager ? 'Requests for Nick to Do' : (isHeather ? 'Review Account Manager Requests' : 'Boss Requests')}</div>
+                        <div className="text-xs text-gray-500">{isAccountManager ? 'Submit a request for Nick. Heather will review and approve/deny.' : (isHeather ? 'Approve, deny, or edit incoming Account Manager requests. Approved items move to Nick.' : 'Add, approve, or complete requests from your boss. Approved requests appear on the calendar on their approved date.')}</div>
                         <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
                             {isAccountManager ? (
                                 <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
@@ -1842,14 +1870,30 @@ export default function App() {
                                 }}>Add</button>
                             </div>
                             )}
+                            {isHeather && (
+                                <div className="mt-3 bg-gray-50 border border-gray-200 rounded p-3 space-y-2">
+                                    <div className="text-xs font-semibold text-gray-700">Send request directly to Nick</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                                        <input value={heatherReqTitle} onChange={(e)=>setHeatherReqTitle(e.target.value)} placeholder="Title" className="px-2 py-1 border border-gray-300 rounded text-sm" />
+                                        <select value={heatherReqPriority} onChange={(e)=>setHeatherReqPriority(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                                            <option value="low">Low</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="high">High</option>
+                                        </select>
+                                        <input type="date" value={heatherReqDueDate} onChange={(e)=>setHeatherReqDueDate(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-sm" />
+                                        <input value={heatherReqDetails} onChange={(e)=>setHeatherReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-gray-300 rounded text-sm md:col-span-2" />
+                                        <button className="bg-blue-600 text-white text-xs rounded px-2 py-1" onClick={handleAddHeatherDirectRequest}>Send to Nick</button>
+                                    </div>
+                                </div>
+                            )}
                             <div className="space-y-2">
                                 {(isHeather
                                     // Heather sees those waiting for her
                                     ? requests.filter(r=> (r.source==='boss' || r.source==='account_manager') && (r.owner==='Nick' || !r.owner) && (r.reviewStage==='heather' || (!r.reviewStage && r.status==='pending')))
                                     : isAccountManager
                                         ? requests.filter(r=> r.source==='account_manager' && (r.owner==='Nick' || !r.owner))
-                                        // Nick sees boss items and AM items that moved to him
-                                        : requests.filter(r=> ((r.source==='boss') || (r.source==='account_manager' && (r.reviewStage==='nick' || r.status==='approved'))) && appliesOwnerFilter(r.owner))
+                                        // Nick sees boss items and AM items that moved to him, and direct from Heather
+                                        : requests.filter(r=> ((r.source==='boss') || (r.source==='account_manager' && (r.reviewStage==='nick' || r.status==='approved')) || (r.source==='heather')) && appliesOwnerFilter(r.owner))
                                 ).map((r)=>(
                                     <div key={`boss-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-amber-200">
                                         <div>
