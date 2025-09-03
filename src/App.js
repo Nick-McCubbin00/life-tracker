@@ -26,11 +26,29 @@ export default function App() {
 
     // Auth / User & global filters
     const [currentUser, setCurrentUser] = useState(null);
+    const isHeather = currentUser === 'Heather';
+    const isAccountManager = currentUser === 'AccountManager';
+    const isRestrictedViewer = isHeather || isAccountManager;
     const [ownerFilter, setOwnerFilter] = useState('all'); // 'all' | 'Nick' | 'MP'
     const [mode, setMode] = useState('work'); // 'work' | 'home'
     const [theme, setTheme] = useState('light');
-    const [calendarTypeFilter, setCalendarTypeFilter] = useState('work'); // 'work' | 'home' | 'all'
+    const [calendarTypeFilter, setCalendarTypeFilter] = useState('all'); // 'work' | 'home' | 'all'
     const [calendarVisibility, setCalendarVisibility] = useState({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } });
+    
+    // Simple passcode gate for Nick and Heather
+    const [loginPasscodeFor, setLoginPasscodeFor] = useState(null); // 'Nick' | 'Heather' | null
+    const [loginPasscodeValue, setLoginPasscodeValue] = useState('');
+    const [loginPasscodeError, setLoginPasscodeError] = useState('');
+    const openPasscode = (user) => { setLoginPasscodeFor(user); setLoginPasscodeValue(''); setLoginPasscodeError(''); };
+    const cancelPasscode = () => { setLoginPasscodeFor(null); setLoginPasscodeValue(''); setLoginPasscodeError(''); };
+    const confirmPasscode = () => {
+        const code = (loginPasscodeValue || '').trim();
+        if (loginPasscodeFor === 'Nick' && code === '0604') { setCurrentUser('Nick'); cancelPasscode(); return; }
+        if (loginPasscodeFor === 'Heather' && code === '6263') { setCurrentUser('Heather'); cancelPasscode(); return; }
+        setLoginPasscodeError('Incorrect code');
+    };
+    // Track when remote state has been loaded to prevent early autosave overwriting
+    const [stateLoaded, setStateLoaded] = useState(false);
 
     // Collections
     const [tasks, setTasks] = useState([]);      // {id, title, date(YYYY-MM-DD), done, recurrence}
@@ -49,6 +67,11 @@ export default function App() {
     const [newRequestTitle, setNewRequestTitle] = useState('');
     const [newRequestPriority, setNewRequestPriority] = useState('medium');
     const [requestDetails, setRequestDetails] = useState('');
+    // Heather -> Nick direct request form state (work requests)
+    const [heatherReqTitle, setHeatherReqTitle] = useState('');
+    const [heatherReqPriority, setHeatherReqPriority] = useState('medium');
+    const [heatherReqDueDate, setHeatherReqDueDate] = useState('');
+    const [heatherReqDetails, setHeatherReqDetails] = useState('');
 
     // Groceries inputs
     const [groceryName, setGroceryName] = useState('');
@@ -59,6 +82,12 @@ export default function App() {
     const [reqFormPriority, setReqFormPriority] = useState('medium');
     const [reqFormDueDate, setReqFormDueDate] = useState('');
     const [reqFormDetails, setReqFormDetails] = useState('');
+    // Account Manager request form
+    const [amName, setAmName] = useState('');
+    const [amTitle, setAmTitle] = useState('');
+    const [amPriority, setAmPriority] = useState('medium');
+    const [amDueDate, setAmDueDate] = useState('');
+    const [amDetails, setAmDetails] = useState('');
 
     // Boss requests (work)
     const [bossReqTitle, setBossReqTitle] = useState('');
@@ -86,6 +115,42 @@ export default function App() {
     const [workSubNotesDraft, setWorkSubNotesDraft] = useState('');
     // Work tab new subtask input state per task
     const [newSubTitleByTask, setNewSubTitleByTask] = useState({});
+
+    // Request edit modal state
+    const [requestEditId, setRequestEditId] = useState(null);
+    const [requestEdit, setRequestEdit] = useState({ title: '', details: '', priority: 'medium', submittedBy: '', dueDate: '' });
+    const openRequestEditor = (req) => {
+        const due = req.status === 'approved' ? (req.approvedDueDate || req.requestedDueDate) : req.requestedDueDate;
+        setRequestEditId(req.id);
+        setRequestEdit({
+            title: req.title || '',
+            details: req.details || '',
+            priority: req.priority || 'medium',
+            submittedBy: req.submittedBy || '',
+            dueDate: due ? formatDate(due) : '',
+        });
+    };
+    const closeRequestEditor = () => { setRequestEditId(null); };
+    const saveRequestEditor = () => {
+        const r = (requests || []).find(x => x.id === requestEditId);
+        if (!r) { setRequestEditId(null); return; }
+        const updates = {
+            title: (requestEdit.title || '').trim(),
+            details: (requestEdit.details || '').trim(),
+            priority: requestEdit.priority || 'medium',
+            submittedBy: (requestEdit.submittedBy || '').trim() || undefined,
+        };
+        if (requestEdit.dueDate) {
+            const iso = new Date(requestEdit.dueDate).toISOString();
+            if (r.status === 'approved') updates.approvedDueDate = iso;
+            else updates.requestedDueDate = iso;
+        }
+        updateRequest(r.id, updates);
+        // ensure persistence immediately
+        const next = (requests || []).map((x)=> x.id===r.id ? { ...x, ...updates } : x);
+        saveStateImmediate({ requests: next });
+        setRequestEditId(null);
+    };
 
     // Meals / Meal Planner
     const [meals, setMeals] = useState([]); // {id,title,recipe,link,ingredients:[{id,name,quantity}], fileUrl?, owner}
@@ -187,7 +252,37 @@ export default function App() {
 
     useEffect(() => {}, [currentUser]);
 
+    // Restrict Heather and Account Manager views
+    useEffect(() => {
+        if (currentUser === 'Heather') {
+            if (mode !== 'work') setMode('work');
+            setActiveTab((prev) => (prev === 'calendar' || prev === 'requests') ? prev : 'requests');
+            if (ownerFilter !== 'Nick') setOwnerFilter('Nick');
+            if (calendarTypeFilter !== 'work') setCalendarTypeFilter('work');
+            setCalendarVisibility({ Nick: { work: true, personal: false }, MP: { work: false, personal: false } });
+        }
+        if (currentUser === 'AccountManager') {
+            if (mode !== 'work') setMode('work');
+            if (activeTab !== 'requests') setActiveTab('requests');
+            if (ownerFilter !== 'Nick') setOwnerFilter('Nick');
+            if (calendarTypeFilter !== 'work') setCalendarTypeFilter('work');
+            setCalendarVisibility({ Nick: { work: true, personal: false }, MP: { work: false, personal: false } });
+        }
+    }, [currentUser, mode, ownerFilter, calendarTypeFilter, activeTab]);
+
     useEffect(() => {}, []);
+
+    // Save pending requests quickly on unload/refresh
+    useEffect(() => {
+        const handler = () => {
+            try {
+                const body = JSON.stringify({ requests });
+                navigator.sendBeacon && navigator.sendBeacon('/api/state', new Blob([body], { type: 'application/json' }));
+            } catch (_) {}
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [requests]);
 
     const addDaysToYmd = (ymd, days) => {
         if (!ymd) return ymd;
@@ -266,6 +361,34 @@ export default function App() {
             setRemoteError(e?.message || 'Failed to list Google calendars');
         } finally {
             setGoogleSyncBusy(false);
+        }
+    };
+
+    // Immediate save helper to persist state changes without waiting for debounce
+    const saveStateImmediate = async (overrides = {}) => {
+        try {
+            if (!stateLoaded) return; // avoid saving before we loaded server state
+            const nowIso = new Date().toISOString();
+            const body = {
+                events,
+                tasks,
+                groceries,
+                requests,
+                meals,
+                workFiles,
+                trips,
+                afterWorkPlans,
+                savedAt: nowIso,
+                ...overrides,
+            };
+            await fetch('/api/state', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                keepalive: true,
+            });
+        } catch (_) {
+            // swallow; debounced saver will retry
         }
     };
 
@@ -410,6 +533,19 @@ export default function App() {
                 if (Array.isArray(d.workFiles)) setWorkFiles(d.workFiles);
                 if (Array.isArray(d.trips)) setTrips(d.trips);
                 if (Array.isArray(d.afterWorkPlans)) setAfterWorkPlans(d.afterWorkPlans);
+                const needCalFallback = (!Array.isArray(d.events) || d.events.length===0) && (!Array.isArray(d.tasks) || d.tasks.length===0);
+                if (needCalFallback) {
+                    try {
+                        const resp2 = await fetch('/api/load-backup');
+                        const json2 = await resp2.json();
+                        if (resp2.ok) {
+                            const b = json2?.data || {};
+                            if ((!Array.isArray(d.events) || d.events.length===0) && Array.isArray(b.events)) setEvents(b.events);
+                            if ((!Array.isArray(d.tasks) || d.tasks.length===0) && Array.isArray(b.tasks)) setTasks(b.tasks);
+                        }
+                    } catch (_) {}
+                }
+                setStateLoaded(true);
             } catch (e) {
                 setRemoteError(e?.message || 'Failed to load state');
             }
@@ -418,6 +554,7 @@ export default function App() {
 
     // Persist to Blob (debounced)
     useEffect(() => {
+        if (!stateLoaded) return; // don't autosave until initial state is loaded
         const save = setTimeout(async () => {
             const nowIso = new Date().toISOString();
             if (usingBlob) {
@@ -441,9 +578,9 @@ export default function App() {
                     setRemoteError('Failed to save state');
                 }
             }
-        }, 400);
+        }, 150);
         return () => clearTimeout(save);
-    }, [events, tasks, groceries, requests, meals, workFiles, trips, afterWorkPlans, usingBlob]);
+    }, [events, tasks, groceries, requests, meals, workFiles, trips, afterWorkPlans, usingBlob, stateLoaded]);
 
     // Removed localStorage caching of collections to ensure cross-instance consistency
 
@@ -468,6 +605,14 @@ export default function App() {
     // Utilities
     const generateId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const appliesOwnerFilter = (owner) => ownerFilter === 'all' || owner === ownerFilter;
+    const updateRequest = (requestId, updates) => {
+        setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, ...updates } : r));
+    };
+    const denyRequest = (requestId) => {
+        const next = (requests || []).map((r) => r.id === requestId ? { ...r, status: 'denied', approved: false, reviewStage: 'done' } : r);
+        setRequests(next);
+        saveStateImmediate({ requests: next });
+    };
     const parseYmd = (ymd) => {
         if (!ymd) return new Date();
         const parts = String(ymd).split('-').map((p) => parseInt(p, 10));
@@ -588,14 +733,76 @@ export default function App() {
         setRequestDetails('');
         setNewRequestPriority('medium');
     };
+    const handleAddAccountManagerRequest = () => {
+        const t = (amTitle || '').trim();
+        const n = (amName || '').trim();
+        if (!t || !amDueDate) return;
+        const id = generateId();
+        const payload = {
+            id,
+            title: t,
+            details: (amDetails || '').trim(),
+            priority: amPriority,
+            requestedDueDate: new Date(amDueDate).toISOString(),
+            approved: false,
+            approvedDueDate: null,
+            status: 'pending',
+            source: 'account_manager',
+            submittedBy: n || 'Account Manager',
+            owner: 'Nick',
+            reviewStage: 'heather',
+        };
+        setRequests((prev) => [...prev, payload]);
+        // Persist immediately so Heather sees it and refresh keeps it
+        saveStateImmediate({ requests: [...requests, payload] });
+        setAmTitle(''); setAmDetails(''); setAmDueDate(''); setAmPriority('medium'); setAmName('');
+    };
+    const handleAddHeatherDirectRequest = () => {
+        const t = (heatherReqTitle || '').trim();
+        if (!t || !heatherReqDueDate) return;
+        const id = generateId();
+        const payload = {
+            id,
+            title: t,
+            details: (heatherReqDetails || '').trim(),
+            priority: heatherReqPriority,
+            requestedDueDate: new Date(heatherReqDueDate).toISOString(),
+            approved: false,
+            approvedDueDate: null,
+            status: 'pending',
+            source: 'heather',
+            submittedBy: 'Heather',
+            owner: 'Nick',
+            reviewStage: 'nick',
+        };
+        setRequests((prev) => [...prev, payload]);
+        // Persist quickly so Nick sees it
+        saveStateImmediate({ requests: [...requests, payload] });
+        setHeatherReqTitle(''); setHeatherReqDetails(''); setHeatherReqDueDate(''); setHeatherReqPriority('medium');
+    };
     const approveRequest = (requestId, newDueDateStr) => {
-        setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, approved: true, status: 'approved', approvedDueDate: newDueDateStr ? new Date(newDueDateStr).toISOString() : (r.requestedDueDate || null) } : r));
+        const next = (requests || []).map((r) => {
+            if (r.id !== requestId) return r;
+            const dateIso = newDueDateStr ? new Date(newDueDateStr).toISOString() : (r.requestedDueDate || null);
+            // Two-stage flow: Heather -> Nick -> final
+            if (currentUser === 'Heather') {
+                return { ...r, reviewStage: 'nick', requestedDueDate: dateIso, approved: false, status: 'pending' };
+            }
+            // Nick (or others) final approval
+            return { ...r, approved: true, status: 'approved', approvedDueDate: dateIso, reviewStage: 'done' };
+        });
+        setRequests(next);
+        saveStateImmediate({ requests: next });
     };
     const completeRequest = (requestId) => {
-        setRequests((prev) => prev.map((r) => r.id === requestId ? { ...r, status: 'completed' } : r));
+        const next = (requests || []).map((r) => r.id === requestId ? { ...r, status: 'completed' } : r);
+        setRequests(next);
+        saveStateImmediate({ requests: next });
     };
     const deleteRequest = (requestId) => {
-        setRequests((prev) => prev.filter((r) => r.id !== requestId));
+        const next = (requests || []).filter((r) => r.id !== requestId);
+        setRequests(next);
+        saveStateImmediate({ requests: next });
     };
 
     // Calendar rendering logic
@@ -683,7 +890,7 @@ export default function App() {
                             <div key={`t-overdue-${t.id}`} className="w-full text-[10px] text-white rounded-lg shadow px-1.5 py-0.5 truncate flex items-center gap-1" style={{ backgroundColor: '#ef4444' }}>
                                 <span className={`truncate ${isTaskDoneOnDate(t, dayStr) ? 'line-through' : ''}`}>{t.title}</span>
                                 {t.recurrence && t.recurrence !== 'none' && <span className="ml-1 opacity-80">({t.recurrence})</span>}
-                                <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>
+                                {!isHeather && <button className="ml-auto hover:bg-white/10 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteTask(t.id); }}><Trash2 size={12} /></button>}
                             </div>
                         ))}
                         {overdue.length>0 && (
@@ -707,7 +914,7 @@ export default function App() {
                             <div key={`rq-${r.id}`} className="w-full text-[10px] rounded-lg shadow px-1.5 py-0.5 truncate" style={{ backgroundColor: '#ffd6e7', color: '#7a2946' }} title={`${r.title} (${r.priority})`}>
                                 <div className="flex items-center justify-between">
                                     <span className="font-medium truncate">{r.title}</span>
-                                    <button className="hover:bg-black/5 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteRequest(r.id); }}><Trash2 size={12} /></button>
+                                    {!isHeather && <button className="hover:bg-black/5 rounded p-0.5" onClick={(e)=>{ e.stopPropagation(); deleteRequest(r.id); }}><Trash2 size={12} /></button>}
                                     </div>
                                 </div>
                         ))}
@@ -737,8 +944,10 @@ export default function App() {
                         <div className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Select User</div>
                         <div className="text-sm text-gray-600 dark:text-gray-300 mb-4">Choose who is using the app</div>
                         <div className="flex items-center justify-center gap-3">
-                            <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=> setCurrentUser('Nick')}>Nick</button>
+                            <button className="px-4 py-2 rounded-lg bg-blue-600 text-white" onClick={()=> openPasscode('Nick')}>Nick</button>
                             <button className="px-4 py-2 rounded-lg bg-gray-800 text-white" onClick={()=> setCurrentUser('MP')}>MP</button>
+                            <button className="px-4 py-2 rounded-lg bg-amber-600 text-white" onClick={()=> openPasscode('Heather')}>Heather</button>
+                            <button className="px-4 py-2 rounded-lg bg-purple-700 text-white" onClick={()=> setCurrentUser('AccountManager')}>Account Manager</button>
                         </div>
                         <div className="mt-4 flex items-center justify-center gap-2 text-xs">
                             <span className="text-gray-600 dark:text-gray-300">Theme</span>
@@ -746,6 +955,31 @@ export default function App() {
                                 {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
                             </button>
                         </div>
+                        {loginPasscodeFor && (
+                            <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+                                <div className="w-full max-w-sm bg-white dark:bg-gray-900 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 p-4 text-left">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">Enter passcode for {loginPasscodeFor}</div>
+                                        <button className="p-1 text-gray-500 hover:text-gray-700" onClick={cancelPasscode}><X size={16} /></button>
+                                    </div>
+                                    <input
+                                        type="password"
+                                        inputMode="numeric"
+                                        autoFocus
+                                        value={loginPasscodeValue}
+                                        onChange={(e)=>{ setLoginPasscodeValue(e.target.value); if (loginPasscodeError) setLoginPasscodeError(''); }}
+                                        className="w-full border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100"
+                                        placeholder="Enter 4-digit code"
+                                        onKeyDown={(e)=>{ if (e.key === 'Enter') { e.preventDefault(); confirmPasscode(); } }}
+                                    />
+                                    {loginPasscodeError && <div className="mt-2 text-xs text-red-600 flex items-center gap-1"><AlertTriangle size={14} /> {loginPasscodeError}</div>}
+                                    <div className="mt-3 flex items-center justify-end gap-2">
+                                        <button className="px-3 py-1.5 text-xs rounded bg-gray-100 text-gray-800 hover:bg-gray-200" onClick={cancelPasscode}>Cancel</button>
+                                        <button className="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700" onClick={confirmPasscode}>Confirm</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
                 {currentUser && (
@@ -754,7 +988,9 @@ export default function App() {
                 <div className="flex items-center justify-center">
                     <div className="flex items-center justify-center gap-2">
                         <button onClick={()=> setMode('work')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='work' ? 'bg-amber-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Work</button>
+                        {!isHeather && (
                         <button onClick={()=> setMode('home')} className={`px-4 py-2 rounded-lg text-sm font-semibold ${mode==='home' ? 'bg-blue-600 text-white' : 'bg-white text-gray-800 border border-gray-300'}`}>Home</button>
+                        )}
                     </div>
                 </div>
 
@@ -762,12 +998,19 @@ export default function App() {
                 {mode==='work' ? (
                 <div className="bg-white dark:bg-gray-900 p-2 rounded-2xl shadow border border-gray-200 dark:border-gray-700">
                     <div className="flex flex-wrap gap-2 items-center">
+                        {!isAccountManager && (
                         <button onClick={() => setActiveTab('calendar')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='calendar' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><CalendarDays size={16} /> Calendar</button>
+                        )}
                         <button onClick={() => setActiveTab('requests')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='requests' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Star size={16} /> Requests</button>
+                        {!(isHeather || isAccountManager) && (
+                            <>
                         <button onClick={() => setActiveTab('work')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='work' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Briefcase size={16} /> Tasks</button>
                         <button onClick={() => setActiveTab('afterwork')} className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${activeTab==='afterwork' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}><Clipboard size={16} /> After work planner</button>
+                            </>
+                        )}
                         <div className="ml-auto flex items-center gap-2">
                             {/* Google Calendar controls */}
+                            {!(isHeather || isAccountManager) && (
                             <div className="flex items-center gap-2">
                                 {!googleAuthorized ? (
                                     <button
@@ -789,11 +1032,14 @@ export default function App() {
                                     </>
                                 )}
                             </div>
+                            )}
+                            {!(isHeather || isAccountManager) && (
                             <select value={ownerFilter} onChange={(e)=>setOwnerFilter(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs">
                                 <option value="all">All</option>
                                 <option value="Nick">Nick</option>
                                 <option value="MP">MP</option>
                             </select>
+                            )}
                             <button onClick={()=> setTheme(theme==='light'?'dark':'light')} className="p-1 rounded bg-gray-100 text-gray-700 hover:bg-gray-200">
                                 {theme==='light'? <Moon size={14} /> : <Sun size={14} />}
                             </button>
@@ -802,6 +1048,7 @@ export default function App() {
                             ) : (
                                 <span className="text-xs text-gray-600 bg-gray-100 border border-gray-200 rounded px-2 py-1" title="Falling back to local storage">Offline</span>
                             )}
+                            {(!isAccountManager) && (
                             <button
                                 disabled={isBackingUp}
                                 onClick={async ()=>{
@@ -820,6 +1067,8 @@ export default function App() {
                                 }}
                                 className={`text-xs rounded px-2 py-1 ${isBackingUp ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
                             >{isBackingUp ? 'Backing…' : 'Backup'}</button>
+                            )}
+                            {!isHeather && (
                             <button
                                 disabled={isRestoring}
                                 onClick={async ()=>{
@@ -844,6 +1093,7 @@ export default function App() {
                                 }}
                                 className={`text-xs rounded px-2 py-1 ${isRestoring ? 'bg-gray-200 text-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'} border border-gray-200`}
                             >{isRestoring ? 'Restoring…' : 'Restore'}</button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1048,6 +1298,8 @@ export default function App() {
                                             </select>
                                         </div>
                                     )}
+                                    {!isHeather && (
+                                    <>
                                     <input value={newItemTitle} onChange={(e)=>setNewItemTitle(e.target.value)} placeholder={newItemType==='task'?"Add task":"Add event"} className="md:col-span-3 px-3 py-2 border border-gray-300 rounded-lg" />
                                     <button className="bg-blue-600 text-white text-sm font-semibold px-3 py-2 rounded-lg hover:bg-blue-700" onClick={()=>{
                                         const t = (newItemTitle||'').trim(); if (!t) return;
@@ -1058,6 +1310,8 @@ export default function App() {
                                         setNewTaskType('personal');
                                         setNewEventType('work');
                                     }}>Add</button>
+                                    </>
+                                    )}
                                 </div>
                                 </div>
 
@@ -1237,18 +1491,18 @@ export default function App() {
                 {activeTab==='calendar' && (
                 <div className="bg-white dark:bg-gray-900 p-2 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-wrap items-center gap-3">
                     <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">Calendar Filter:</div>
-                    <select value={calendarTypeFilter} onChange={(e)=> setCalendarTypeFilter(e.target.value)} className="px-2 py-1 text-xs border border-gray-300 rounded">
+                    <select value={calendarTypeFilter} onChange={(e)=> setCalendarTypeFilter(e.target.value)} className="px-2 py-1 text-xs border border-gray-300 rounded" disabled={isHeather}>
                         <option value="work">Work</option>
                         <option value="home">Home</option>
                         <option value="all">All</option>
                     </select>
                     <div className="flex items-center gap-4 text-xs">
                         <div className="font-semibold text-gray-700 dark:text-gray-300">Nick</div>
-                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, work: e.target.checked }}))} /> Work</label>
-                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, personal: e.target.checked }}))} /> Home</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, work: e.target.checked }}))} disabled={isHeather} /> Work</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.Nick.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, Nick: { ...prev.Nick, personal: e.target.checked }}))} disabled={isHeather} /> Home</label>
                         <div className="font-semibold text-gray-700 dark:text-gray-300 ml-4">MP</div>
-                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, work: e.target.checked }}))} /> Work</label>
-                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, personal: e.target.checked }}))} /> Home</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.work} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, work: e.target.checked }}))} disabled={isHeather} /> Work</label>
+                        <label className="flex items-center gap-1"><input type="checkbox" checked={!!calendarVisibility.MP.personal} onChange={(e)=> setCalendarVisibility((prev)=> ({...prev, MP: { ...prev.MP, personal: e.target.checked }}))} disabled={isHeather} /> Home</label>
                     </div>
                     <div className="ml-auto flex items-center gap-2">
                         <button className="px-2 py-1 border rounded text-xs" onClick={()=> setCalendarVisibility({ Nick: { work: true, personal: true }, MP: { work: true, personal: true } })}>All</button>
@@ -1580,9 +1834,23 @@ export default function App() {
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
                     {mode==='work' ? (
                     <>
-                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Boss Requests</div>
-                        <div className="text-xs text-gray-500">Add, approve, or complete requests from your boss. Approved requests appear on the calendar on their approved date.</div>
+                        <div className="text-xl font-bold text-gray-800 dark:text-gray-100">{isAccountManager ? 'Requests for Nick to Do' : (isHeather ? 'Review Account Manager Requests' : 'Boss Requests')}</div>
+                        <div className="text-xs text-gray-500">{isAccountManager ? 'Submit a request for Nick. Heather will review and approve/deny.' : (isHeather ? 'Approve, deny, or edit incoming Account Manager requests. Approved items move to Nick.' : 'Add, approve, or complete requests from your boss. Approved requests appear on the calendar on their approved date.')}</div>
                         <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
+                            {isAccountManager ? (
+                                <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                                    <input value={amName} onChange={(e)=>setAmName(e.target.value)} placeholder="Your name" className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                    <input value={amTitle} onChange={(e)=>setAmTitle(e.target.value)} placeholder="Task title" className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                    <select value={amPriority} onChange={(e)=>setAmPriority(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm">
+                                        <option value="low">Low</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="high">High</option>
+                                    </select>
+                                    <input type="date" value={amDueDate} onChange={(e)=>setAmDueDate(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm" />
+                                    <input value={amDetails} onChange={(e)=>setAmDetails(e.target.value)} placeholder="Details/notes (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
+                                    <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={handleAddAccountManagerRequest}>Submit</button>
+                                </div>
+                            ) : (
                             <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
                                 <input value={bossReqTitle} onChange={(e)=>setBossReqTitle(e.target.value)} placeholder="Title" className="px-2 py-1 border border-amber-300 rounded text-sm" />
                                 <select value={bossReqPriority} onChange={(e)=>setBossReqPriority(e.target.value)} className="px-2 py-1 border border-amber-300 rounded text-sm">
@@ -1594,31 +1862,99 @@ export default function App() {
                                 <input value={bossReqDetails} onChange={(e)=>setBossReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-amber-300 rounded text-sm md:col-span-2" />
                                 <button className="bg-amber-600 text-white text-xs rounded px-2 py-1" onClick={()=>{
                                     if (!bossReqTitle.trim()) return;
+                                        const prevUser = currentUser;
+                                        if (isHeather) setCurrentUser('Nick');
                                     handleAddRequest(bossReqDueDate || formatDate(new Date()), bossReqTitle, bossReqPriority, bossReqDetails, 'boss');
+                                        if (isHeather) setCurrentUser(prevUser);
                                     setBossReqTitle(''); setBossReqPriority('medium'); setBossReqDueDate(''); setBossReqDetails('');
                                 }}>Add</button>
                             </div>
+                            )}
+                            {isHeather && (
+                                <div className="mt-3 bg-gray-50 border border-gray-200 rounded p-3 space-y-2">
+                                    <div className="text-xs font-semibold text-gray-700">Send request directly to Nick</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
+                                        <input value={heatherReqTitle} onChange={(e)=>setHeatherReqTitle(e.target.value)} placeholder="Title" className="px-2 py-1 border border-gray-300 rounded text-sm" />
+                                        <select value={heatherReqPriority} onChange={(e)=>setHeatherReqPriority(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-sm">
+                                            <option value="low">Low</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="high">High</option>
+                                        </select>
+                                        <input type="date" value={heatherReqDueDate} onChange={(e)=>setHeatherReqDueDate(e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-sm" />
+                                        <input value={heatherReqDetails} onChange={(e)=>setHeatherReqDetails(e.target.value)} placeholder="Details (optional)" className="px-2 py-1 border border-gray-300 rounded text-sm md:col-span-2" />
+                                        <button className="bg-blue-600 text-white text-xs rounded px-2 py-1" onClick={handleAddHeatherDirectRequest}>Send to Nick</button>
+                                    </div>
+                                </div>
+                            )}
                             <div className="space-y-2">
-                                {requests.filter(r=> r.source==='boss' && appliesOwnerFilter(r.owner)).map((r)=>(
+                                {(isHeather
+                                    // Heather sees those waiting for her
+                                    ? requests.filter(r=> (r.source==='boss' || r.source==='account_manager') && (r.owner==='Nick' || !r.owner) && (r.reviewStage==='heather' || (!r.reviewStage && r.status==='pending')))
+                                    : isAccountManager
+                                        ? requests.filter(r=> r.source==='account_manager' && (r.owner==='Nick' || !r.owner))
+                                        // Nick sees boss items and AM items that moved to him, and direct from Heather
+                                        : requests.filter(r=> ((r.source==='boss') || (r.source==='account_manager' && (r.reviewStage==='nick' || r.status==='approved')) || (r.source==='heather')) && appliesOwnerFilter(r.owner))
+                                ).map((r)=>(
                                     <div key={`boss-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-amber-200">
                                         <div>
                                             <div className="font-semibold text-gray-800">{r.title}</div>
-                                            <div className="text-[11px] text-gray-600 capitalize">{r.priority}</div>
+                                            <div className="text-[11px] text-gray-600 capitalize">{r.priority}{r.submittedBy ? ` · from ${r.submittedBy}` : ''}</div>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            {r.status==='pending' && <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>}
-                                            {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1" onClick={()=>completeRequest(r.id)}>Done</button>}
-                                            <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={12}/></button>
+                                            {isHeather && (r.reviewStage==='heather' || (!r.reviewStage && r.status==='pending')) && (
+                                                <>
+                                                    <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>updateRequest(r.id, { requestedDueDate: new Date(e.target.value).toISOString() })} className="px-2 py-1 border border-gray-300 rounded text-xs" />
+                                                    <select defaultValue={r.priority} onChange={(e)=>updateRequest(r.id, { priority: e.target.value })} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                                        <option value="low">Low</option>
+                                                        <option value="medium">Medium</option>
+                                                        <option value="high">High</option>
+                                                    </select>
+                                                    <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>
+                                                    <button className="text-xs bg-red-600 text-white rounded px-2 py-1" onClick={()=>denyRequest(r.id)}>Deny</button>
+                                                </>
+                                            )}
+                                            {/* Nick approval actions */}
+                                            {!isHeather && !isAccountManager && (r.reviewStage==='nick' || r.status==='approved') && r.status!=='approved' && (
+                                                <>
+                                                    <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>updateRequest(r.id, { requestedDueDate: new Date(e.target.value).toISOString() })} className="px-2 py-1 border border-gray-300 rounded text-xs" />
+                                                    <select defaultValue={r.priority} onChange={(e)=>updateRequest(r.id, { priority: e.target.value })} className="px-2 py-1 border border-gray-300 rounded text-xs">
+                                                        <option value="low">Low</option>
+                                                        <option value="medium">Medium</option>
+                                                        <option value="high">High</option>
+                                                    </select>
+                                                    <button className="text-xs bg-green-600 text-white rounded px-2 py-1" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>
+                                                    <button className="text-xs bg-red-600 text-white rounded px-2 py-1" onClick={()=>denyRequest(r.id)}>Deny</button>
+                                                </>
+                                            )}
+                                            <button className="text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>openRequestEditor(r)}>Edit</button>
+                                            {!isAccountManager && <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={12}/></button>}
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
+                        {isHeather && (
+                            <div className="space-y-2">
+                                <div className="text-sm font-semibold text-gray-700 mt-4">Requests Approved by Nick</div>
+                                {requests.filter(r=> (r.owner==='Nick' || !r.owner) && r.reviewStage==='done' && r.status==='approved').map((r)=>(
+                                    <div key={`approved-${r.id}`} className="flex items-center justify-between rounded px-3 py-2 text-xs bg-white border border-green-200">
+                                        <div>
+                                            <div className="font-semibold text-gray-800">{r.title}</div>
+                                            <div className="text-[11px] text-gray-600">Due {r.approvedDueDate ? new Date(r.approvedDueDate).toLocaleDateString() : (r.requestedDueDate ? new Date(r.requestedDueDate).toLocaleDateString() : '')}</div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button className="text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>openRequestEditor(r)}>Edit</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </>
                     ) : (
                     <>
                         <div className="text-xl font-bold text-gray-800 dark:text-gray-100">Fiancé Requests</div>
                         <div className="text-xs text-gray-500">Add, approve, or complete requests. Approved requests appear on the calendar (light pink) on their approved date.</div>
+                        {!isHeather && (
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                             <div className="grid grid-cols-1 md:grid-cols-6 gap-2">
                                 <input value={reqFormTitle} onChange={(e)=>setReqFormTitle(e.target.value)} placeholder="Title" className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
@@ -1648,8 +1984,9 @@ export default function App() {
                                 }}>Add</button>
                             </div>
                         </div>
+                        )}
                         <div className="grid grid-cols-1 gap-2">
-                            {requests.filter(r=> r.source!=='boss' && appliesOwnerFilter(r.owner)).sort((a,b)=>{
+                            {requests.filter(r=> r.source!=='boss' && (isHeather ? r.owner==='Nick' : appliesOwnerFilter(r.owner))).sort((a,b)=>{
                                 const pri = { high: 0, medium: 1, low: 2 };
                                 return pri[a.priority]-pri[b.priority];
                             }).map((r)=>(
@@ -1659,14 +1996,15 @@ export default function App() {
                                         <div className="text-xs text-[#7a2946]">Priority: <span className="capitalize">{r.priority}</span>{r.requestedDueDate ? ` · requested ${new Date(r.requestedDueDate).toLocaleDateString()}` : ''}{r.approvedDueDate ? ` · approved ${new Date(r.approvedDueDate).toLocaleDateString()}` : ''}</div>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        {r.status==='pending' && (
+                                        {!isHeather && r.status==='pending' && (
                                             <>
                                                 <input type="date" defaultValue={r.requestedDueDate ? formatDate(r.requestedDueDate) : ''} onChange={(e)=>approveRequest(r.id, e.target.value)} className="px-2 py-1 border border-gray-300 rounded text-xs" />
                                                 <button className="text-xs bg-green-600 text-white rounded px-2 py-1 hover:bg-green-700" onClick={()=>approveRequest(r.id, r.requestedDueDate ? formatDate(r.requestedDueDate) : formatDate(new Date()))}>Approve</button>
                                             </>
                                         )}
-                                        {r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
-                                        <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>
+                                        {!isHeather && r.status!=='completed' && <button className="text-xs bg-blue-600 text-white rounded px-2 py-1 hover:bg-blue-700" onClick={()=>completeRequest(r.id)}>Done</button>}
+                                        <button className="text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded px-2 py-1" onClick={()=>openRequestEditor(r)}>Edit</button>
+                                        {!isHeather && <button className="text-gray-600 hover:text-gray-900" onClick={()=>deleteRequest(r.id)}><Trash2 size={14}/></button>}
                                     </div>
                                 </div>
                             ))}
@@ -1675,8 +2013,50 @@ export default function App() {
                 </div>
                 )}
 
+                {/* Request Edit Modal */}
+                {requestEditId && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/40" onClick={closeRequestEditor}></div>
+                    <div className="relative bg-white dark:bg-gray-900 w-full max-w-md rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-4">
+                        <div className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-3">Edit Request</div>
+                        <div className="space-y-2 text-sm">
+                            <label className="block">
+                                <div className="text-gray-700 dark:text-gray-300 mb-1">Title</div>
+                                <input value={requestEdit.title} onChange={(e)=>setRequestEdit((p)=>({...p, title: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                            </label>
+                            <label className="block">
+                                <div className="text-gray-700 dark:text-gray-300 mb-1">Details / Notes</div>
+                                <textarea value={requestEdit.details} onChange={(e)=>setRequestEdit((p)=>({...p, details: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded min-h-[80px]"></textarea>
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <label className="block">
+                                    <div className="text-gray-700 dark:text-gray-300 mb-1">Priority</div>
+                                    <select value={requestEdit.priority} onChange={(e)=>setRequestEdit((p)=>({...p, priority: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded">
+                                        <option value="low">Low</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="high">High</option>
+                                    </select>
+                                </label>
+                                <label className="block">
+                                    <div className="text-gray-700 dark:text-gray-300 mb-1">Due date</div>
+                                    <input type="date" value={requestEdit.dueDate} onChange={(e)=>setRequestEdit((p)=>({...p, dueDate: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded" />
+                                </label>
+                            </div>
+                            <label className="block">
+                                <div className="text-gray-700 dark:text-gray-300 mb-1">Submitted by</div>
+                                <input value={requestEdit.submittedBy} onChange={(e)=>setRequestEdit((p)=>({...p, submittedBy: e.target.value}))} className="w-full px-3 py-2 border border-gray-300 rounded" placeholder="Name (optional)" />
+                            </label>
+                        </div>
+                        <div className="mt-4 flex items-center gap-2 justify-end">
+                            <button className="px-3 py-1.5 rounded border border-gray-300 text-gray-700" onClick={closeRequestEditor}>Cancel</button>
+                            <button className="px-3 py-1.5 rounded bg-blue-600 text-white" onClick={saveRequestEditor}>Save</button>
+                        </div>
+                    </div>
+                </div>
+                )}
+
                 {/* Work Tab (Work mode only) */}
-                {mode==='work' && activeTab === 'work' && (
+                {mode==='work' && activeTab === 'work' && !isHeather && (
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-4">
                     <div className="flex items-center gap-2">
                         <Briefcase size={18} />
@@ -1788,7 +2168,7 @@ export default function App() {
                 )}
 
                 {/* After Work Planner Tab */}
-                {activeTab === 'afterwork' && (
+                {activeTab === 'afterwork' && !isHeather && (
                 <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
                     <div className="flex items-center gap-3">
                         <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">After work planner</div>
